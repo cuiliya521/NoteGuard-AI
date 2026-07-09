@@ -1,0 +1,352 @@
+[
+  {
+    "category": "产品板块",
+    "term": "中国",
+    "reason": "疑似权威背书或国家级表述，平台审核风险较高。",
+    "suggestion": "",
+    "severity": "high"
+  },
+  {
+    "category": "产品板块",
+    "term": "国家",
+    "reason": "疑似国家级背书表述，容易触发审核风险。",
+    "suggestion": "",
+    "severity": "high"
+  },
+  {
+    "category": "产品板块",
+    "term": "首个",
+    "reason": "疑似绝对化或首创性表达，需要谨慎使用。",
+    "suggestion": "",
+    "severity": "high"
+  },
+  {
+    "category": "产品板块",
+    "term": "央视",
+    "reason": "疑似权威媒体背书表达，容易触发平台审核。",
+    "suggestion": "",
+    "severity": "high"
+  },
+  {
+    "category": "效果承诺",
+    "term": "分数",
+    "reason": "疑似学习结果或成绩承诺表达。",
+    "suggestion": "提升",
+    "severity": "medium"
+  },
+  {
+    "category": "效果承诺",
+    "term": "丢分",
+    "reason": "疑似考试成绩焦虑表达，建议弱化。",
+    "suggestion": "薄弱点",
+    "severity": "medium"
+  },
+  {
+    "category": "效果承诺",
+    "term": "提分",
+    "reason": "疑似成绩提升承诺表达。",
+    "suggestion": "提升",
+    "severity": "high"
+  },
+  {
+    "category": "效果承诺",
+    "term": "出分",
+    "reason": "疑似考试结果承诺表达。",
+    "suggestion": "看到进步",
+    "severity": "high"
+  },
+  {
+    "category": "产品板块",
+    "term": "中考",
+    "reason": "考试敏感表达，建议改为更温和说法。",
+    "suggestion": "中阶测试",
+    "severity": "high"
+  },
+  {
+    "category": "产品板块",
+    "term": "必考",
+    "reason": "疑似保证考试命中或结果承诺。",
+    "suggestion": "要点",
+    "severity": "high"
+  },
+  {
+    "category": "产品板块",
+    "term": "考点",
+    "reason": "考试导向表达较强，建议弱化。",
+    "suggestion": "难点",
+    "severity": "medium"
+  },
+  {
+    "category": "产品板块",
+    "term": "一对一",
+    "reason": "课程服务表达存在审核风险，建议替换为更合规话术。",
+    "suggestion": "点对点",
+    "severity": "medium"
+  },
+  {
+    "category": "产品板块",
+    "term": "考试",
+    "reason": "考试敏感表达，建议替换为测试或学习场景表达。",
+    "suggestion": "测试",
+    "severity": "medium"
+  },
+  {
+    "category": "产品板块",
+    "term": "作业",
+    "reason": "教育审核敏感词，建议弱化为练习。",
+    "suggestion": "练习",
+    "severity": "medium"
+  },
+  {
+    "category": "产品板块",
+    "term": "真人",
+    "reason": "师资或授课形式表达可能触发审核风险。",
+    "suggestion": "",
+    "severity": "high"
+  },
+  {
+    "category": "产品板块",
+    "term": "直播",
+    "reason": "授课形式表达可能触发审核风险。",
+    "suggestion": "",
+    "severity": "high"
+  },
+  {
+    "category": "产品板块",
+    "term": "亲授",
+    "reason": "师资背书表达过强，建议删除或弱化。",
+    "suggestion": "",
+    "severity": "high"
+  },
+  {
+    "category": "产品板块",
+    "term": "课",
+    "reason": "课程直接表达在当前规则中不建议出现。",
+    "suggestion": "",
+    "severity": "medium"
+  },
+  {
+    "category": "产品板块",
+    "term": "孩子",
+    "reason": "当前规则建议使用更安全的人群称呼。",
+    "suggestion": "学员",
+    "severity": "medium"
+  },
+  {
+    "category": "产品板块",
+    "term": "学生",
+    "reason": "当前规则建议使用更安全的人群称呼。",
+    "suggestion": "学员",
+    "severity": "medium"
+  },
+  {
+    "category": "产品板块",
+    "term": "北大",
+    "reason": "名校背书表达风险较高。",
+    "suggestion": "海淀教书",
+    "severity": "high"
+  },
+  {
+    "category": "产品板块",
+    "term": "北京",
+    "reason": "地域或资源背书表达需谨慎。",
+    "suggestion": "海淀",
+    "severity": "medium"
+  },
+  {
+    "category": "产品板块",
+    "term": "期末",
+    "reason": "考试节点表达，建议弱化。",
+    "suggestion": "学期尾声",
+    "severity": "medium"
+  },
+  {
+    "category": "产品板块",
+    "term": "补习班",
+    "reason": "培训机构表达风险较高。",
+    "suggestion": "",
+    "severity": "high"
+  },
+  {
+    "category": "产品板块",
+    "term": "排名",
+    "reason": "疑似结果比较或成绩承诺。",
+    "suggestion": "目标",
+    "severity": "medium"
+  },
+  {
+    "category": "产品板块",
+    "term": "24小时答疑",
+    "reason": "服务承诺过强，建议弱化。",
+    "suggestion": "随时答疑",
+    "severity": "medium"
+  },
+  {
+    "category": "学科板块",
+    "term": "数学",
+    "reason": "学科不能单独出现，建议使用更合规表达。",
+    "suggestion": "数理思维",
+    "severity": "medium"
+  },
+  {
+    "category": "学科板块",
+    "term": "初中数学",
+    "reason": "学科和学段直接表达风险较高。",
+    "suggestion": "数理思维",
+    "severity": "high"
+  },
+  {
+    "category": "学科板块",
+    "term": "初中",
+    "reason": "学段直接表达建议替换。",
+    "suggestion": "初阶",
+    "severity": "medium"
+  },
+  {
+    "category": "学科板块",
+    "term": "语文",
+    "reason": "学科直接表达建议替换。",
+    "suggestion": "文学素养",
+    "severity": "medium"
+  },
+  {
+    "category": "学科板块",
+    "term": "全科目",
+    "reason": "泛化学科承诺表达风险较高。",
+    "suggestion": "",
+    "severity": "high"
+  },
+  {
+    "category": "学科板块",
+    "term": "全学科",
+    "reason": "泛化学科承诺表达风险较高。",
+    "suggestion": "",
+    "severity": "high"
+  },
+  {
+    "category": "学科板块",
+    "term": "13-15岁",
+    "reason": "年龄表述在案例中审核不通过，建议替换。",
+    "suggestion": "13-15宝贝",
+    "severity": "medium"
+  },
+  {
+    "category": "师资板块",
+    "term": "初中数学第一人",
+    "reason": "疑似绝对化师资背书。",
+    "suggestion": "",
+    "severity": "high"
+  },
+  {
+    "category": "师资板块",
+    "term": "原高途主讲",
+    "reason": "机构或履历背书表达需要弱化。",
+    "suggestion": "原上市公司主讲",
+    "severity": "medium"
+  },
+  {
+    "category": "师资板块",
+    "term": "辅导老师",
+    "reason": "师资角色表达建议替换为规划类表达。",
+    "suggestion": "学习规划师",
+    "severity": "medium"
+  },
+  {
+    "category": "年级板块",
+    "term": "初一",
+    "reason": "年级直接表达建议替换。",
+    "suggestion": "初阶一",
+    "severity": "medium"
+  },
+  {
+    "category": "年级板块",
+    "term": "初二",
+    "reason": "年级直接表达建议替换。",
+    "suggestion": "初阶二",
+    "severity": "medium"
+  },
+  {
+    "category": "年级板块",
+    "term": "初三",
+    "reason": "年级直接表达建议替换。",
+    "suggestion": "初阶三",
+    "severity": "medium"
+  },
+  {
+    "category": "年级板块",
+    "term": "小升初",
+    "reason": "升学节点敏感表达。",
+    "suggestion": "",
+    "severity": "high"
+  },
+  {
+    "category": "年级板块",
+    "term": "九下",
+    "reason": "具体学段节点表达风险较高。",
+    "suggestion": "",
+    "severity": "high"
+  },
+  {
+    "category": "极限词板块",
+    "term": "最",
+    "reason": "疑似极限词或绝对化表达。",
+    "suggestion": "",
+    "severity": "high"
+  },
+  {
+    "category": "极限词板块",
+    "term": "第一",
+    "reason": "疑似极限词或绝对化表达。",
+    "suggestion": "",
+    "severity": "high"
+  },
+  {
+    "category": "极限词板块",
+    "term": "首位",
+    "reason": "疑似极限词或绝对化表达。",
+    "suggestion": "",
+    "severity": "high"
+  },
+  {
+    "category": "效果承诺",
+    "term": "负责到出分",
+    "reason": "疑似结果承诺表达。",
+    "suggestion": "思维轻松开窍",
+    "severity": "high"
+  },
+  {
+    "category": "效果承诺",
+    "term": "冲前三",
+    "reason": "疑似排名或成绩承诺。",
+    "suggestion": "冲前排",
+    "severity": "high"
+  },
+  {
+    "category": "效果承诺",
+    "term": "一个月见分晓",
+    "reason": "疑似短期效果承诺。",
+    "suggestion": "",
+    "severity": "high"
+  },
+  {
+    "category": "效果承诺",
+    "term": "弯道超车",
+    "reason": "疑似结果承诺或焦虑表达。",
+    "suggestion": "",
+    "severity": "high"
+  },
+  {
+    "category": "效果承诺",
+    "term": "985",
+    "reason": "升学结果或名校导向表达风险较高。",
+    "suggestion": "",
+    "severity": "high"
+  },
+  {
+    "category": "效果承诺",
+    "term": "211",
+    "reason": "升学结果或名校导向表达风险较高。",
+    "suggestion": "",
+    "severity": "high"
+  }
+]
