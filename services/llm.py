@@ -301,3 +301,4 @@ def rewrite_content(
     except Exception as error:
         set_last_error(f"{type(error).__name__}: {error}")
         return None
+
