@@ -10,7 +10,7 @@
     "category": "产品板块",
     "term": "国家",
     "reason": "疑似国家级背书表述，容易触发审核风险。",
-    "suggestion": "",
+    "suggestion":  "娃",
     "severity": "high"
   },
   {
@@ -129,7 +129,7 @@
     "category": "产品板块",
     "term": "孩子",
     "reason": "当前规则建议使用更安全的人群称呼。",
-    "suggestion": "学员",
+    "suggestion": "娃",
     "severity": "medium"
   },
   {
