@@ -1,5 +1,15 @@
 .env
+.env.*
+!.env.example
 .venv/
 __pycache__/
 *.pyc
 .DS_Store
+.streamlit/
+.pytest_cache/
+.mypy_cache/
+*.tmp
+*.save
+data/history.json
+data/creator_profile.json
+outputs/

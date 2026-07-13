@@ -1,33 +1,71 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import time
 from html import escape
 from pathlib import Path
+from uuid import uuid4
 
 import streamlit as st
 import streamlit.components.v1 as components
 
+from services.history import (
+    create_history_record,
+    load_recent_history,
+    upsert_history_record,
+)
+from services.creator_profile import (
+    PROFILE_FIELDS,
+    load_creator_profile,
+    save_creator_profile,
+)
 from services.image_reviewer import ImageReviewResult, review_image
+from services.image_ocr import extract_text_with_status
+from services.link_importer import LinkImportError, import_public_page
+from services.llm import (
+    analyze_cover,
+    analyze_viral_note,
+    generate_pre_publish_report,
+    generate_title_candidates,
+    generate_xiaohongshu_note,
+    get_last_error,
+)
 from services.rewriter import (
     RewriteChange,
+    TitleCandidateReview,
     build_rewrite_changes,
     build_rewrite_status_note,
     rewrite_all,
+    review_title_candidates,
+    rewrite_with_local_rules,
 )
 from services.rule_checker import (
     Finding,
+    Rule,
+    add_rule_record,
     build_highlighted_text,
     build_risk_detail_rows,
     build_risk_summary,
     build_safe_term_hits,
     check_text,
+    delete_rule_record,
+    get_severity_label,
+    load_rule_records,
     load_rules,
+    update_rule_record,
 )
 
 
 BASE_DIR = Path(__file__).resolve().parent
 RULE_PATH = BASE_DIR / "data" / "rules.json"
+CREATOR_PROFILE_PATH = BASE_DIR / "data" / "creator_profile.json"
+EXPERIENCE_TITLE = "数学差生逆袭秘籍！30天提高50分"
+EXPERIENCE_BODY = """孩子数学一直拖后腿，
+我通过每天1小时线上1v1辅导，
+帮助孩子找到适合自己的学习方法。
+一个月后成绩提升明显，
+很多家长都来咨询。"""
 
 
 @st.cache_data
@@ -35,13 +73,108 @@ def get_rules():
     return load_rules(RULE_PATH)
 
 
+def refresh_rule_cache(message: str) -> None:
+    get_rules.clear()
+    st.session_state["rule_manager_notice"] = message
+    st.rerun()
+
+
 def reset_review() -> None:
     st.session_state["title_input"] = ""
     st.session_state["body_input"] = ""
     st.session_state["image_text_input"] = ""
+    st.session_state["draft_title"] = ""
+    st.session_state["draft_body"] = ""
+    st.session_state["draft_image_text"] = ""
+    st.session_state.pop("uploaded_image_data", None)
+    st.session_state["confirm_clear_content"] = False
     st.session_state["review_started"] = False
     st.session_state["is_reviewing"] = False
+    st.session_state.pop("safe_rewrite_key", None)
+    st.session_state.pop("safe_rewrite_result", None)
+    st.session_state.pop("title_generation_key", None)
+    st.session_state.pop("title_candidates", None)
+    st.session_state.pop("title_generation_error", None)
+    st.session_state.pop("title_candidate_reviews", None)
+    st.session_state.pop("cover_analysis_requested", None)
+    st.session_state.pop("cover_analysis_key", None)
+    st.session_state.pop("cover_analysis", None)
+    st.session_state.pop("cover_analysis_error", None)
+    st.session_state.pop("cover_ocr_lines", None)
+    st.session_state.pop("cover_ocr_attempt_key", None)
+    st.session_state.pop("cover_ocr_error", None)
+    st.session_state.pop("cover_ocr_status", None)
+    st.session_state.pop("cover_auto_analysis_key", None)
+    st.session_state.pop("cover_analysis_image_key", None)
+    st.session_state.pop("cover_analysis_text_key", None)
+    st.session_state.pop("cover_analysis_source", None)
+    st.session_state.pop("note_generation_result", None)
+    st.session_state.pop("note_generation_error", None)
+    st.session_state.pop("pre_publish_report_key", None)
+    st.session_state.pop("pre_publish_report", None)
+    st.session_state.pop("pre_publish_report_error", None)
+    st.session_state.pop("review_run_id", None)
     st.session_state["uploader_key"] = st.session_state.get("uploader_key", 0) + 1
+
+
+def load_experience_case() -> None:
+    st.session_state["title_input"] = EXPERIENCE_TITLE
+    st.session_state["body_input"] = EXPERIENCE_BODY
+    st.session_state["image_text_input"] = ""
+    st.session_state["draft_title"] = EXPERIENCE_TITLE
+    st.session_state["draft_body"] = EXPERIENCE_BODY
+    st.session_state["draft_image_text"] = ""
+    st.session_state["review_started"] = True
+    st.session_state["is_reviewing"] = False
+    st.session_state.pop("safe_rewrite_key", None)
+    st.session_state.pop("safe_rewrite_result", None)
+    st.session_state.pop("title_generation_key", None)
+    st.session_state.pop("title_candidates", None)
+    st.session_state.pop("title_generation_error", None)
+    st.session_state.pop("title_candidate_reviews", None)
+    st.session_state.pop("cover_analysis_requested", None)
+    st.session_state.pop("cover_analysis_key", None)
+    st.session_state.pop("cover_analysis", None)
+    st.session_state.pop("cover_analysis_error", None)
+    st.session_state.pop("cover_ocr_lines", None)
+    st.session_state.pop("cover_ocr_attempt_key", None)
+    st.session_state.pop("cover_ocr_error", None)
+    st.session_state.pop("cover_ocr_status", None)
+    st.session_state.pop("cover_auto_analysis_key", None)
+    st.session_state.pop("cover_analysis_image_key", None)
+    st.session_state.pop("cover_analysis_text_key", None)
+    st.session_state.pop("cover_analysis_source", None)
+    st.session_state.pop("note_generation_result", None)
+    st.session_state.pop("note_generation_error", None)
+    st.session_state.pop("pre_publish_report_key", None)
+    st.session_state.pop("pre_publish_report", None)
+    st.session_state.pop("pre_publish_report_error", None)
+    st.session_state["review_run_id"] = uuid4().hex
+    st.session_state["uploader_key"] = st.session_state.get("uploader_key", 0) + 1
+
+
+def sync_content_draft() -> None:
+    st.session_state["draft_title"] = st.session_state.get("title_input", "")
+    st.session_state["draft_body"] = st.session_state.get("body_input", "")
+
+
+def sync_cover_text_draft() -> None:
+    st.session_state["draft_image_text"] = st.session_state.get("image_text_input", "")
+
+
+def restore_last_input() -> None:
+    snapshot = st.session_state.get("last_content_snapshot")
+    if not snapshot:
+        st.session_state["workspace_notice"] = "暂时没有可恢复的输入内容。"
+        return
+
+    st.session_state["draft_title"] = snapshot.get("title", "")
+    st.session_state["draft_body"] = snapshot.get("body", "")
+    st.session_state["draft_image_text"] = snapshot.get("image_text", "")
+    st.session_state["title_input"] = st.session_state["draft_title"]
+    st.session_state["body_input"] = st.session_state["draft_body"]
+    st.session_state["image_text_input"] = st.session_state["draft_image_text"]
+    st.session_state["workspace_notice"] = "已恢复最近一次输入。"
 
 
 def get_risk_level(findings: list[Finding]) -> tuple[str, str, str]:
@@ -52,7 +185,26 @@ def get_risk_level(findings: list[Finding]) -> tuple[str, str, str]:
     if high_count:
         return "高风险", build_risk_summary(findings), "risk-high"
 
+    medium_count = sum(1 for item in findings if item.severity == "medium")
+    if not medium_count:
+        return "低风险", build_risk_summary(findings), "risk-low"
+
     return "中风险", build_risk_summary(findings), "risk-mid"
+
+
+def get_content_safety_score(findings: list[Finding]) -> tuple[int, str]:
+    penalties = {
+        "high": 20,
+        "medium": 10,
+        "low": 5,
+    }
+    score = max(0, 100 - sum(penalties.get(item.severity, 0) for item in findings))
+
+    if score >= 90:
+        return score, "🟢 内容较安全"
+    if score >= 70:
+        return score, "🟡 建议优化"
+    return score, "🔴 风险较高"
 
 
 def build_review_text(
@@ -95,53 +247,107 @@ def render_styles() -> None:
         """
         <style>
         .stApp {
-            background: #f6f7fb;
-            color: #111827;
+            background: #f8f8fa;
+            color: #1f2937;
         }
         .block-container {
-            padding-top: 2rem;
-            padding-bottom: 2rem;
-            max-width: 1280px;
+            padding-top: 1.5rem;
+            padding-bottom: 3rem;
+            max-width: 1180px;
         }
         .hero {
-            background: #ffffff;
-            border: 1px solid #e5e7eb;
-            border-radius: 12px;
-            padding: 24px 28px;
-            margin-bottom: 18px;
-            box-shadow: 0 10px 30px rgba(15, 23, 42, 0.05);
+            background: linear-gradient(135deg, #fff7f8 0%, #ffffff 68%);
+            border: 1px solid #f5d8dc;
+            border-radius: 14px;
+            padding: 26px 30px;
+            margin-bottom: 20px;
+            box-shadow: 0 12px 30px rgba(68, 24, 30, 0.05);
         }
         .hero h1 {
             margin: 0;
-            font-size: 34px;
+            font-size: 32px;
             line-height: 1.15;
-            color: #111827;
+            color: #242024;
+            letter-spacing: 0;
         }
         .hero p {
-            margin: 8px 0 0;
-            color: #4b5563;
-            font-size: 16px;
+            margin: 7px 0 0;
+            color: #6b5860;
+            font-size: 15px;
+            font-weight: 600;
         }
         .notice {
-            margin-top: 14px;
+            margin-top: 12px;
             padding: 10px 12px;
             border-radius: 8px;
-            background: #f9fafb;
-            border: 1px solid #e5e7eb;
-            color: #374151;
+            background: rgba(255, 255, 255, 0.8);
+            border: 1px solid #f0e3e5;
+            color: #6b4c55;
+            font-size: 14px;
         }
-        .section-card {
+        .step-indicator {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin: 0 0 18px;
+            color: #6b6470;
+            font-size: 14px;
+            font-weight: 600;
+        }
+        .step-indicator span {
+            padding: 6px 10px;
+            border: 1px solid #e6e4e8;
+            border-radius: 999px;
             background: #ffffff;
-            border: 1px solid #e5e7eb;
-            border-radius: 10px;
-            padding: 18px;
-            margin-bottom: 14px;
-            box-shadow: 0 8px 24px rgba(15, 23, 42, 0.04);
         }
-        .section-card h3 {
+        .step-indicator .active {
+            color: #a33445;
+            border-color: #edc7ce;
+            background: #fff7f8;
+        }
+        .sidebar-note {
+            color: #78716c;
+            font-size: 12px;
+            line-height: 1.45;
+            margin: -2px 0 12px 6px;
+        }
+        .experience-card {
+            margin: 8px 0 14px;
+            padding: 12px 14px;
+            border: 1px solid #f2d8dc;
+            border-radius: 8px;
+            background: #fff8f9;
+        }
+        .experience-card strong {
+            display: block;
+            margin-bottom: 4px;
+            color: #a33445;
+        }
+        .experience-card p {
+            margin: 0;
+            color: #73545c;
+            font-size: 14px;
+            line-height: 1.5;
+        }
+        div[data-testid="stVerticalBlockBorderWrapper"] {
+            border-color: #e9e8ec;
+            border-radius: 12px;
+            background: #ffffff;
+            box-shadow: 0 6px 20px rgba(31, 35, 41, 0.035);
+        }
+        div[data-testid="stVerticalBlockBorderWrapper"] > div {
+            padding: 0.25rem;
+        }
+        .module-eyebrow {
+            color: #a83b4a;
+            font-size: 13px;
+            font-weight: 700;
+            margin-bottom: 4px;
+        }
+        .module-title {
             margin: 0 0 12px;
-            font-size: 18px;
-            color: #111827;
+            font-size: 21px;
+            color: #242024;
         }
         .risk-badge {
             display: inline-block;
@@ -216,6 +422,42 @@ def render_styles() -> None:
             margin: 4px 0;
             color: #374151;
         }
+        .diagnostic-note {
+            color: #6b7280;
+            font-size: 14px;
+            line-height: 1.6;
+        }
+        button[kind="primary"] {
+            background: #d84b5d !important;
+            border-color: #d84b5d !important;
+        }
+        button[kind="primary"]:hover {
+            background: #bd3d50 !important;
+            border-color: #bd3d50 !important;
+        }
+        .stTabs [data-baseweb="tab-list"] {
+            gap: 8px;
+            border-bottom: 1px solid #eeeef1;
+        }
+        .stTabs [data-baseweb="tab"] {
+            height: 40px;
+            padding: 0 10px;
+            color: #6b6470;
+        }
+        .stTabs [aria-selected="true"] {
+            color: #c13f51 !important;
+            border-bottom-color: #d84b5d !important;
+        }
+        details {
+            border: 1px solid #ecebf0;
+            border-radius: 8px;
+            background: #fcfcfd;
+        }
+        @media (max-width: 700px) {
+            .block-container { padding: 1rem; }
+            .hero { padding: 22px 20px; }
+            .hero h1 { font-size: 28px; }
+        }
         </style>
         """,
         unsafe_allow_html=True,
@@ -225,12 +467,24 @@ def render_styles() -> None:
 def render_copy_buttons(
     rewritten_title: str,
     rewritten_body: str,
-    review_text: str,
+    rewrite_reason: str,
 ) -> None:
+    safe_rewrite_text = "\n".join(
+        [
+            "安全版标题：",
+            rewritten_title,
+            "",
+            "安全版正文：",
+            rewritten_body,
+            "",
+            "修改原因：",
+            rewrite_reason or "已根据审核风险完成安全改写。",
+        ]
+    )
     copy_items = [
-        ("copy-title", "复制改写标题", rewritten_title, "改写标题已复制"),
-        ("copy-body", "复制改写正文", rewritten_body, "改写正文已复制"),
-        ("copy-review", "复制完整审核意见", review_text, "完整审核意见已复制"),
+        ("copy-title", "复制标题", rewritten_title, "安全版标题已复制"),
+        ("copy-body", "复制正文", rewritten_body, "安全版正文已复制"),
+        ("copy-all", "复制全部内容", safe_rewrite_text, "安全版内容已复制"),
     ]
     buttons_html = "\n".join(
         f"""
@@ -373,19 +627,9 @@ def render_image_review(image_review: ImageReviewResult, has_image: bool) -> Non
         st.info("未上传图片。")
         return
 
-    st.caption("当前版本支持手动录入图片文字进行审核，OCR 自动识别将在后续版本接入。")
-
     if not image_review["enabled"]:
-        st.info("已上传图片，但尚未输入图片文字。")
+        st.info("当前未成功识别图片文字，请手动补充后继续分析。")
         return
-
-    st.markdown("**图片文字**")
-    st.text_area(
-        "已审核的图片文字",
-        value=image_review["image_text"],
-        height=120,
-        disabled=True,
-    )
 
     if image_review["risk_items"]:
         st.warning("图片发现风险：")
@@ -405,6 +649,62 @@ def render_image_review(image_review: ImageReviewResult, has_image: bool) -> Non
         st.success("图片未发现风险。")
 
 
+def render_cover_analysis(
+    has_image: bool,
+    ocr_lines: list[str],
+    analysis: dict | None,
+    error: str,
+) -> None:
+    st.markdown("#### 封面图片AI分析")
+    if not has_image:
+        st.info("上传封面图片后，可点击“AI分析封面”获取封面优化建议。")
+        return
+
+    if error:
+        st.warning(f"封面分析未完成：{error}")
+        return
+
+    if not analysis:
+        st.caption("点击左侧“AI分析封面”后，将展示 OCR 文字和封面优化建议。")
+        return
+
+    if ocr_lines:
+        st.caption("识别文字已同步到“快速开始”的可编辑封面文字框，可修正后重新分析。")
+    st.metric("封面评分", f"{analysis['score']}/100")
+    attraction = int(analysis["attraction"])
+    st.write(f"点击吸引力：{'⭐' * attraction}{'☆' * (5 - attraction)}")
+
+    st.markdown("**分析**")
+    dimension_labels = {
+        "title_attraction": "标题吸引力",
+        "parent_pain": "家长痛点",
+        "information_density": "信息量",
+        "marketing_risk": "营销风险",
+        "core_selling_point": "核心卖点",
+        "visual_hierarchy": "字号和层级建议",
+        "mobile_readability": "手机端阅读体验",
+    }
+    for key, label in dimension_labels.items():
+        st.write(f"{label}：{analysis['dimensions'].get(key) or '未提供'}")
+
+    st.markdown("**存在问题**")
+    if analysis["issues"]:
+        for index, issue in enumerate(analysis["issues"], start=1):
+            st.write(f"{index}. {issue}")
+    else:
+        st.write("暂无明显问题。")
+
+    st.markdown("**优化建议**")
+    if analysis["suggestions"]:
+        for index, suggestion in enumerate(analysis["suggestions"], start=1):
+            st.write(f"{index}. {suggestion}")
+    else:
+        st.write("当前封面已具备基础信息。")
+
+    st.markdown("**推荐封面文案**")
+    st.write(analysis["recommended_copy"])
+
+
 def render_safe_term_hits(safe_terms: list[str]) -> None:
     if not safe_terms:
         st.info("未明显命中可用卖点词。")
@@ -413,6 +713,473 @@ def render_safe_term_hits(safe_terms: list[str]) -> None:
     st.write("命中的可用卖点词：")
     for term in safe_terms:
         st.write(f"- {term}")
+
+
+def render_title_candidates(titles: list[str]) -> None:
+    title_types = [
+        "🔥 痛点型",
+        "👀 好奇型",
+        "📚 干货型",
+        "👩‍🏫 老师经验型",
+        "💬 家长共鸣型",
+    ]
+    for title_type, title in zip(title_types, titles, strict=True):
+        st.markdown(f"**{title_type}：**")
+        st.write(title)
+
+
+def render_title_copy_button(title: str, index: int, label: str = "复制标题") -> None:
+    payload = json.dumps(title, ensure_ascii=False)
+    button_label = escape(label)
+    components.html(
+        f"""
+        <button id="copy-title-{index}" style="width:100%;height:34px;border:1px solid #e4e4e7;border-radius:8px;background:#fff;color:#3f3f46;cursor:pointer;">{button_label}</button>
+        <script>
+        document.getElementById("copy-title-{index}").addEventListener("click", async () => {{
+            await navigator.clipboard.writeText({payload});
+            document.getElementById("copy-title-{index}").textContent = "已复制";
+        }});
+        </script>
+        """,
+        height=42,
+    )
+
+
+def render_title_candidate_reviews(reviews: list[TitleCandidateReview]) -> None:
+    title_types = ["痛点型", "好奇型", "干货型", "老师经验型", "家长共鸣型"]
+    for index, review in enumerate(reviews, start=1):
+        title_type = title_types[index - 1] if index <= len(title_types) else "标题候选"
+        with st.container(border=True):
+            st.caption(f"{index}. {title_type}")
+            status = "🟢 安全" if review.status == "安全" else "🔴 有风险"
+            st.markdown(f"**{status}**")
+            st.markdown(f"**最终推荐标题：** {review.safe_title}")
+            if review.original_title != review.safe_title:
+                st.caption(f"原始标题：{review.original_title}")
+            if review.risk_terms:
+                st.write(f"命中风险词：{'、'.join(review.risk_terms)}")
+            st.caption(f"修改说明：{review.change_note}")
+            render_title_copy_button(review.safe_title, index)
+
+
+def render_generated_note(note: dict, rules) -> None:
+    paragraphs = [line.strip() for line in note["body"].splitlines() if line.strip()]
+    opening = paragraphs[0] if paragraphs else ""
+    action = paragraphs[-1] if len(paragraphs) > 1 else ""
+    main_body = "\n".join(paragraphs[1:-1] if len(paragraphs) > 2 else paragraphs)
+
+    st.markdown("**标题**")
+    for index, title in enumerate(note["titles"], start=1):
+        st.write(f"{index}. {title}")
+    if opening:
+        st.markdown("**开头**")
+        st.write(opening)
+    st.markdown("**正文**")
+    st.text_area("生成的笔记正文", value=main_body or note["body"], height=240)
+    if action:
+        st.markdown("**行动引导**")
+        st.write(action)
+
+    note_findings = check_text(
+        title="\n".join(note["titles"]),
+        body=note["body"],
+        rules=rules,
+    )
+    safe_note = rewrite_with_local_rules("\n".join(note["titles"]), note["body"], note_findings)
+    if note_findings:
+        st.warning("生成内容命中当前审核规则，已提供安全版供参考。")
+        with st.expander("查看生成内容风险与安全版"):
+            st.dataframe(build_risk_detail_rows(note_findings), use_container_width=True, hide_index=True)
+            st.text_area("安全版正文", value=safe_note.body, height=220)
+    else:
+        st.success("生成内容已通过当前规则审核。")
+    st.markdown("**标签**")
+    st.write(" ".join(note["tags"]))
+    st.markdown("**封面文案**")
+    st.write(note["cover_copy"])
+    full_note = "\n".join([note["titles"][0] if note["titles"] else "", "", note["body"], "", " ".join(note["tags"])])
+    render_title_copy_button(full_note, 99, label="复制完整笔记")
+    if st.button("重新审核", use_container_width=True, key="note_recheck_button"):
+        st.success("已使用当前规则库重新审核生成内容。")
+
+
+def render_creator_profile_editor(profile: dict[str, str]) -> None:
+    labels = {
+        "name": "创作者姓名/称呼",
+        "subjects": "教授科目",
+        "target_grades": "目标年级",
+        "target_students": "目标学生类型",
+        "teaching_format": "教学形式",
+        "session_duration": "单次时长",
+        "pricing": "价格信息",
+        "teaching_features": "教学特点",
+        "personal_experience": "个人经历",
+        "public_cases": "可以公开的数据或案例",
+        "do_not_invent": "禁止模型虚构的信息",
+        "desired_action": "希望用户采取的行动",
+        "writing_style": "常用表达方式",
+    }
+    text_area_fields = {
+        "teaching_features",
+        "personal_experience",
+        "public_cases",
+        "do_not_invent",
+        "desired_action",
+        "writing_style",
+    }
+    sections = {
+        "基本身份": ("name", "subjects", "target_grades", "target_students"),
+        "服务信息": ("teaching_format", "session_duration", "pricing", "teaching_features"),
+        "内容风格与禁用信息": (
+            "personal_experience",
+            "public_cases",
+            "do_not_invent",
+            "desired_action",
+            "writing_style",
+        ),
+    }
+    updated_profile: dict[str, str] = {}
+    with st.form("creator_profile_form"):
+        for index, (section_name, fields) in enumerate(sections.items()):
+            with st.expander(section_name, expanded=index == 0):
+                for field in fields:
+                    if field in text_area_fields:
+                        updated_profile[field] = st.text_area(
+                            labels[field],
+                            value=profile.get(field, ""),
+                            height=80,
+                            key=f"creator_{field}",
+                        )
+                    else:
+                        updated_profile[field] = st.text_input(
+                            labels[field],
+                            value=profile.get(field, ""),
+                            key=f"creator_{field}",
+                        )
+        saved = st.form_submit_button("保存创作者资料", type="primary", use_container_width=True)
+    if saved:
+        save_creator_profile(CREATOR_PROFILE_PATH, updated_profile)
+        st.session_state["creator_profile_notice"] = "创作者资料已保存，后续 AI 生成将只参考已填写内容。"
+        st.rerun()
+
+
+def render_viral_note_analysis(analysis: dict) -> None:
+    st.metric("爆款评分", f"{analysis['score']}/100")
+    title_tab, opening_tab, structure_tab, method_tab = st.tabs(
+        ["标题结构", "开头钩子", "正文结构", "可复用方法"]
+    )
+    structure = analysis["structure_analysis"]
+    with title_tab:
+        title_analysis = analysis["title_analysis"]
+        st.write(f"- 是否有痛点：{title_analysis['pain_point']}")
+        st.write(f"- 是否有目标人群：{title_analysis['target_audience']}")
+        st.write(f"- 是否有点击吸引力：{title_analysis['click_attraction']}")
+    with opening_tab:
+        st.write(structure["opening"])
+    with structure_tab:
+        st.write(f"- 中段：{structure['middle']}")
+        st.write(f"- 结尾：{structure['ending']}")
+    with method_tab:
+        st.markdown("**爆款原因**")
+        for index, reason in enumerate(analysis["viral_reasons"], start=1):
+            st.write(f"{index}. {reason}")
+        st.markdown("**可复制模板**")
+        st.text_area("可复制模板", value=analysis["copyable_template"], height=150, disabled=True)
+        st.markdown("**优化建议**")
+        for index, suggestion in enumerate(analysis["suggestions"], start=1):
+            st.write(f"{index}. {suggestion}")
+
+
+def render_pre_publish_report(report: dict) -> None:
+    st.metric("① 综合评分", f"{report['score']}/100")
+
+    st.markdown("**② 标题分析**")
+    title_analysis = report["title_analysis"]
+    for label, items in (
+        ("优点", title_analysis["strengths"]),
+        ("问题", title_analysis["problems"]),
+        ("修改建议", title_analysis["suggestions"]),
+    ):
+        st.write(f"{label}：")
+        for item in items:
+            st.write(f"- {item}")
+
+    st.markdown("**③ 正文分析**")
+    body_analysis = report["body_analysis"]
+    st.write(f"- 结构：{body_analysis['structure']}")
+    st.write(f"- 用户痛点：{body_analysis['user_pain']}")
+    st.write(f"- 营销风险：{body_analysis['marketing_risk']}")
+
+    st.markdown("**④ 封面分析**")
+    cover_analysis = report["cover_analysis"]
+    st.write(f"- 点击吸引力：{cover_analysis['click_attraction']}")
+    st.write(f"- 信息量：{cover_analysis['information_density']}")
+    st.write("优化建议：")
+    for suggestion in cover_analysis["suggestions"]:
+        st.write(f"- {suggestion}")
+
+    st.markdown("**⑤ 最终发布建议**")
+    for index, advice in enumerate(report["final_advice"], start=1):
+        st.write(f"{index}. {advice}")
+
+
+def render_rule_management() -> None:
+    st.markdown(
+        """
+        <div class="hero">
+            <h1>规则管理</h1>
+            <p>审核规则配置中心</p>
+            <div class="notice">新增、编辑或停用规则后，内容审核会在下一次运行时自动读取最新规则库。</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    notice = st.session_state.pop("rule_manager_notice", "")
+    if notice:
+        st.success(notice)
+
+    try:
+        records = load_rule_records(RULE_PATH)
+    except (OSError, ValueError, json.JSONDecodeError) as error:
+        st.error(f"规则库读取失败：{error}")
+        return
+
+    with st.container(border=True):
+        st.markdown('<div class="module-eyebrow">当前规则库</div>', unsafe_allow_html=True)
+        st.markdown('<div class="module-title">审核规则</div>', unsafe_allow_html=True)
+        enabled_count = sum(record["enabled"] for record in records)
+        summary_left, summary_right = st.columns(2)
+        summary_left.metric("规则总数", len(records))
+        summary_right.metric("启用规则", enabled_count)
+        table_rows = [
+            {
+                "关键词": record["term"],
+                "等级": get_severity_label(record["severity"]),
+                "分类": record["category"],
+                "修改建议": record["suggestion"] or "建议删除、弱化或重新表述",
+                "启用状态": "启用" if record["enabled"] else "停用",
+            }
+            for record in records
+        ]
+        st.dataframe(table_rows, use_container_width=True, hide_index=True)
+
+    with st.container(border=True):
+        st.markdown('<div class="module-eyebrow">规则操作</div>', unsafe_allow_html=True)
+        st.markdown('<div class="module-title">维护规则库</div>', unsafe_allow_html=True)
+        add_tab, edit_tab, delete_tab = st.tabs(["新增规则", "编辑规则", "删除规则"])
+
+        with add_tab:
+            with st.form("add_rule_form", clear_on_submit=True):
+                term = st.text_input("关键词", placeholder="例如：保证提分")
+                severity = st.selectbox(
+                    "风险等级",
+                    options=["high", "medium", "low"],
+                    format_func=get_severity_label,
+                )
+                category = st.text_input("分类", placeholder="例如：效果承诺")
+                reason = st.text_area("原因", placeholder="说明该表达可能带来的审核风险", height=100)
+                suggestion = st.text_input("建议替换", placeholder="例如：调整表达")
+                enabled = st.checkbox("启用状态", value=True)
+                submitted = st.form_submit_button("新增规则", type="primary", use_container_width=True)
+            if submitted:
+                try:
+                    add_rule_record(
+                        RULE_PATH,
+                        {
+                            "term": term,
+                            "severity": severity,
+                            "category": category,
+                            "reason": reason,
+                            "suggestion": suggestion,
+                            "enabled": enabled,
+                        },
+                    )
+                except ValueError as error:
+                    st.error(str(error))
+                except OSError as error:
+                    st.error(f"规则保存失败：{error}")
+                else:
+                    refresh_rule_cache(f"已新增规则“{term.strip()}”，审核将立即使用新规则。")
+
+        with edit_tab:
+            if not records:
+                st.info("当前没有可编辑的规则。")
+            else:
+                rule_terms = [record["term"] for record in records]
+                selected_term = st.selectbox(
+                    "选择要编辑的规则",
+                    rule_terms,
+                    format_func=lambda value: next(
+                        record["term"] + f" · {get_severity_label(record['severity'])}"
+                        for record in records
+                        if record["term"] == value
+                    ),
+                )
+                selected_record = next(
+                    record for record in records if record["term"] == selected_term
+                )
+                with st.form(f"edit_rule_form_{selected_term}"):
+                    edited_term = st.text_input(
+                        "关键词",
+                        value=selected_record["term"],
+                        key=f"edit_term_{selected_term}",
+                    )
+                    severity_options = ["high", "medium", "low"]
+                    edited_severity = st.selectbox(
+                        "风险等级",
+                        options=severity_options,
+                        index=severity_options.index(selected_record["severity"]),
+                        format_func=get_severity_label,
+                        key=f"edit_severity_{selected_term}",
+                    )
+                    edited_category = st.text_input(
+                        "分类",
+                        value=selected_record["category"],
+                        key=f"edit_category_{selected_term}",
+                    )
+                    edited_reason = st.text_area(
+                        "原因",
+                        value=selected_record["reason"],
+                        height=100,
+                        key=f"edit_reason_{selected_term}",
+                    )
+                    edited_suggestion = st.text_input(
+                        "建议替换",
+                        value=selected_record["suggestion"],
+                        key=f"edit_suggestion_{selected_term}",
+                    )
+                    edited_enabled = st.checkbox(
+                        "启用状态",
+                        value=selected_record["enabled"],
+                        key=f"edit_enabled_{selected_term}",
+                    )
+                    updated = st.form_submit_button("保存修改", type="primary", use_container_width=True)
+                if updated:
+                    try:
+                        update_rule_record(
+                            RULE_PATH,
+                            selected_term,
+                            {
+                                "term": edited_term,
+                                "severity": edited_severity,
+                                "category": edited_category,
+                                "reason": edited_reason,
+                                "suggestion": edited_suggestion,
+                                "enabled": edited_enabled,
+                            },
+                        )
+                    except ValueError as error:
+                        st.error(str(error))
+                    except OSError as error:
+                        st.error(f"规则保存失败：{error}")
+                    else:
+                        refresh_rule_cache("规则已更新，审核将立即使用最新配置。")
+
+        with delete_tab:
+            if not records:
+                st.info("当前没有可删除的规则。")
+            else:
+                delete_term = st.selectbox("选择要删除的规则", [record["term"] for record in records])
+                confirmed = st.checkbox(
+                    f"我确认删除规则“{delete_term}”",
+                    key=f"confirm_delete_{delete_term}",
+                )
+                if st.button("删除规则", type="primary", use_container_width=True):
+                    if not confirmed:
+                        st.warning("请先确认删除操作。")
+                    else:
+                        try:
+                            delete_rule_record(RULE_PATH, delete_term)
+                        except (OSError, ValueError) as error:
+                            st.error(f"规则删除失败：{error}")
+                        else:
+                            refresh_rule_cache(f"规则“{delete_term}”已删除。")
+
+
+def render_history_section() -> None:
+    history_records = load_recent_history(10)
+
+    with st.container(border=True):
+        st.markdown("### 我的记录")
+        if not history_records:
+            st.info("暂无审核历史。完成一次审核后，记录会自动保存在本地。")
+            return
+
+        def record_type(record: dict) -> str:
+            if record.get("cover_analysis"):
+                return "含封面分析"
+            if record.get("title_candidates"):
+                return "含标题生成"
+            return "内容审核"
+
+        available_types = ["全部", *sorted({record_type(record) for record in history_records})]
+        selected_type = st.selectbox("按功能筛选", available_types, key="history_type_filter")
+        filtered_records = [
+            record
+            for record in history_records
+            if selected_type == "全部" or record_type(record) == selected_type
+        ]
+
+        for record in filtered_records:
+            columns = st.columns([3, 1.2, 1.2, 1])
+            title_summary = str(record.get("title") or "未填写标题")[:36]
+            columns[0].markdown(f"**{title_summary}**")
+            columns[0].caption(f"{record_type(record)} · {record.get('time', '')}")
+            columns[1].write(f"评分：{record.get('safety_score', 0)}/100")
+            columns[2].write(str(record.get("risk_level", "未知")))
+            if columns[3].button("查看详情", key=f"history_view_{record.get('id')}"):
+                st.session_state["selected_history_id"] = record.get("id")
+
+        selected_history_id = st.session_state.get("selected_history_id")
+        selected_record = next(
+            (
+                record
+                for record in filtered_records
+                if record.get("id") == selected_history_id
+            ),
+            None,
+        )
+        if not selected_record:
+            return
+
+        st.markdown("#### 历史详情")
+        st.markdown("**原内容**")
+        st.write(f"标题：{selected_record.get('title', '')}")
+        st.write(f"正文：{selected_record.get('body', '')}")
+        image_ocr_text = selected_record.get("image_ocr_text", "")
+        if image_ocr_text:
+            st.write(f"图片识别文字：{image_ocr_text}")
+
+        st.markdown("**风险分析**")
+        st.write(
+            f"内容安全评分：{selected_record.get('safety_score', 0)}/100"
+            f"｜风险等级：{selected_record.get('risk_level', '未知')}"
+        )
+        risk_items = selected_record.get("risk_items", [])
+        if risk_items:
+            st.dataframe(risk_items, use_container_width=True, hide_index=True)
+        else:
+            st.success("未命中风险项。")
+
+        st.markdown("**AI安全版**")
+        st.write(f"标题：{selected_record.get('safe_title', '')}")
+        st.write(f"正文：{selected_record.get('safe_body', '')}")
+
+        title_candidates = selected_record.get("title_candidates", [])
+        if title_candidates:
+            st.markdown("**爆款标题结果**")
+            render_title_candidates(title_candidates)
+
+        cover_analysis = selected_record.get("cover_analysis")
+        if cover_analysis:
+            st.markdown("**封面分析结果**")
+            st.write(f"封面评分：{cover_analysis.get('score', 0)}/100")
+            attraction = int(cover_analysis.get("attraction", 0))
+            if attraction:
+                st.write(f"点击吸引力：{'⭐' * attraction}{'☆' * (5 - attraction)}")
+            if cover_analysis.get("recommended_copy"):
+                st.write(f"推荐封面文案：{cover_analysis['recommended_copy']}")
 
 
 def render_review_loading(progress_placeholder, completion_placeholder) -> None:
@@ -434,176 +1201,720 @@ def render_review_loading(progress_placeholder, completion_placeholder) -> None:
     completion_placeholder.empty()
 
 
+def render_page_hero(title: str, subtitle: str, description: str) -> None:
+    st.markdown(
+        f"""
+        <div class="hero">
+            <h1>{escape(title)}</h1>
+            <p>{escape(subtitle)}</p>
+            <div class="notice">{escape(description)}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def ensure_cover_ocr(image_bytes: bytes) -> tuple[list[str], str]:
+    image_key = hashlib.sha256(image_bytes).hexdigest()
+    if st.session_state.get("cover_ocr_attempt_key") != image_key:
+        for key in (
+            "cover_analysis",
+            "cover_analysis_error",
+            "cover_analysis_key",
+            "cover_analysis_image_key",
+            "cover_analysis_text_key",
+            "cover_analysis_source",
+            "cover_auto_analysis_key",
+        ):
+            st.session_state.pop(key, None)
+        st.session_state["image_text_input"] = ""
+        st.session_state["draft_image_text"] = ""
+        ocr_lines, ocr_error = extract_text_with_status(image_bytes)
+        st.session_state["cover_ocr_attempt_key"] = image_key
+        st.session_state["cover_ocr_lines"] = ocr_lines
+        st.session_state["cover_ocr_error"] = ocr_error
+        st.session_state["cover_ocr_status"] = "success" if ocr_lines else "failed"
+        if ocr_lines:
+            recognized_text = "\n".join(ocr_lines)
+            st.session_state["image_text_input"] = recognized_text
+            st.session_state["draft_image_text"] = recognized_text
+    return (
+        st.session_state.get("cover_ocr_lines", []),
+        st.session_state.get("cover_ocr_error", ""),
+    )
+
+
+def get_current_image_bytes() -> bytes:
+    return st.session_state.get("uploaded_image_data", b"")
+
+
+def analyze_cover_text(
+    image_bytes: bytes,
+    cover_text: str,
+    rules: list[Rule],
+    source: str,
+) -> dict | None:
+    image_key = hashlib.sha256(image_bytes).hexdigest()
+    normalized_text = cover_text.strip()
+    text_key = hashlib.sha256(
+        f"{image_key}:{normalized_text}".encode("utf-8")
+    ).hexdigest()
+    if not normalized_text:
+        st.session_state["cover_analysis"] = None
+        st.session_state["cover_analysis_error"] = "请先补充封面文字后再分析。"
+        return None
+
+    title = st.session_state.get("draft_title", "")
+    body = st.session_state.get("draft_body", "")
+    findings = check_text(title=title, body=body, rules=rules)
+    analysis = analyze_cover(normalized_text, findings)
+    st.session_state["cover_analysis"] = analysis
+    st.session_state["cover_analysis_error"] = "" if analysis else (
+        get_last_error() or "封面分析暂时不可用。"
+    )
+    st.session_state["cover_analysis_image_key"] = image_key
+    st.session_state["cover_analysis_text_key"] = text_key
+    st.session_state["cover_analysis_source"] = source
+    return analysis
+
+
+def auto_analyze_cover_once(image_bytes: bytes, rules: list[Rule]) -> None:
+    image_key = hashlib.sha256(image_bytes).hexdigest()
+    if st.session_state.get("cover_auto_analysis_key") == image_key:
+        return
+
+    st.session_state["cover_auto_analysis_key"] = image_key
+    if st.session_state.get("cover_ocr_status") != "success":
+        return
+
+    cover_text = st.session_state.get("draft_image_text", "")
+    with st.spinner("已识别封面文字，正在自动完成封面分析..."):
+        analyze_cover_text(image_bytes, cover_text, rules, source="automatic")
+
+
+def render_cover_diagnosis_page(rules: list[Rule]) -> None:
+    render_page_hero(
+        "封面诊断",
+        "上传封面并分析文字与点击吸引力",
+        "上传图片后会自动尝试识别文字；识别失败时仍可手动补充并继续分析。",
+    )
+    uploaded_image = st.file_uploader(
+        "上传封面图片",
+        type=["png", "jpg", "jpeg", "webp"],
+        key=f"cover_page_upload_{st.session_state['uploader_key']}",
+    )
+    if uploaded_image:
+        st.session_state["uploaded_image_data"] = uploaded_image.getvalue()
+
+    image_bytes = get_current_image_bytes()
+    if not image_bytes:
+        st.info("先在这里上传封面，或从创作工作台带入已上传的封面。")
+        return
+
+    ocr_lines, ocr_error = ensure_cover_ocr(image_bytes)
+    auto_analyze_cover_once(image_bytes, rules)
+    st.image(image_bytes, caption="封面预览", use_container_width=True)
+    if "image_text_input" not in st.session_state:
+        st.session_state["image_text_input"] = st.session_state.get("draft_image_text", "")
+    image_review = review_image(st.session_state.get("draft_image_text", ""), rules)
+    analysis = st.session_state.get("cover_analysis")
+    analysis_error = st.session_state.get("cover_analysis_error", "")
+    if analysis and st.session_state.get("cover_analysis_source") == "automatic":
+        st.success("已自动识别并完成分析。可修改文字后重新分析。")
+    elif ocr_error:
+        st.info("当前未成功识别图片文字，请手动补充后继续分析。")
+
+    ocr_tab, risk_tab, attraction_tab, suggestion_tab = st.tabs(
+        ["文字识别", "风险检测", "封面吸引力", "优化建议"]
+    )
+    with ocr_tab:
+        if ocr_error:
+            st.warning(ocr_error)
+        elif ocr_lines:
+            st.caption("OCR 已自动填充以下文字。")
+        cover_text = st.text_area(
+            "封面文字（可编辑）",
+            placeholder="补充封面或海报中的文字",
+            height=180,
+            key="image_text_input",
+            on_change=sync_cover_text_draft,
+        )
+        if st.button("重新分析", type="primary", use_container_width=True, key="cover_page_analyze_button"):
+            with st.spinner("正在根据修正后的文字重新分析封面..."):
+                analyze_cover_text(image_bytes, cover_text, rules, source="manual")
+            st.rerun()
+    with risk_tab:
+        st.write(f"安全状态：{image_review['risk_level']}")
+        render_image_review(image_review, True)
+    with attraction_tab:
+        if analysis_error:
+            st.warning(analysis_error)
+        elif not analysis:
+            st.caption("完成封面分析后，这里会展示评分、核心卖点和信息层级。")
+        else:
+            st.metric("封面评分", f"{analysis['score']}/100")
+            attraction = int(analysis["attraction"])
+            st.write(f"点击吸引力：{'⭐' * attraction}{'☆' * (5 - attraction)}")
+            for key, label in (
+                ("title_attraction", "标题吸引力"),
+                ("parent_pain", "家长痛点"),
+                ("information_density", "信息量"),
+                ("core_selling_point", "核心卖点"),
+                ("visual_hierarchy", "字号和层级建议"),
+                ("mobile_readability", "手机端阅读体验"),
+            ):
+                st.write(f"{label}：{analysis['dimensions'].get(key) or '未提供'}")
+    with suggestion_tab:
+        if not analysis:
+            st.caption("分析完成后，这里会给出可直接使用的封面优化建议。")
+        else:
+            st.markdown("**存在问题**")
+            for index, issue in enumerate(analysis["issues"] or ["暂无明显问题。"], start=1):
+                st.write(f"{index}. {issue}")
+            st.markdown("**优化建议**")
+            for index, suggestion in enumerate(analysis["suggestions"] or ["当前封面已具备基础信息。"], start=1):
+                st.write(f"{index}. {suggestion}")
+            st.markdown("**推荐封面文案**")
+            st.write(analysis["recommended_copy"])
+
+
+def render_viral_workspace() -> None:
+    render_page_hero(
+        "爆款拆解",
+        "通过链接或手动内容分析优秀笔记",
+        "只读取公开网页可访问的信息；遇到登录、验证码或访问限制时可直接切换到手动输入。",
+    )
+    pending_import = st.session_state.pop("pending_viral_import", None)
+    if pending_import:
+        st.session_state["viral_note_title"] = pending_import.get("title", "")
+        st.session_state["viral_note_body"] = pending_import.get("body", "")
+
+    link_tab, manual_tab = st.tabs(["粘贴链接", "手动输入"])
+    with link_tab:
+        import_url = st.text_input("公开网页链接", placeholder="粘贴可公开访问的网页链接", key="viral_import_url")
+        if st.button("读取链接内容", type="primary", use_container_width=True, key="link_import_button"):
+            try:
+                st.session_state["imported_link_content"] = import_public_page(import_url)
+                st.session_state["link_import_error"] = ""
+            except LinkImportError as error:
+                st.session_state["imported_link_content"] = None
+                st.session_state["link_import_error"] = str(error)
+
+        imported_content = st.session_state.get("imported_link_content")
+        import_error = st.session_state.get("link_import_error", "")
+        if imported_content:
+            st.success("已读取公开页面信息，请确认后开始拆解。")
+            st.caption(imported_content["source_url"])
+            st.text_input("导入标题预览", value=imported_content.get("title", ""), disabled=True)
+            st.text_area("导入正文预览", value=imported_content.get("body", ""), height=180, disabled=True)
+            if st.button("使用导入内容开始拆解", use_container_width=True, key="use_imported_content_button"):
+                st.session_state["pending_viral_import"] = imported_content
+                st.rerun()
+        elif import_error:
+            st.warning("该链接暂时无法自动读取，可能需要登录或页面限制访问。请切换到手动输入模式。")
+            st.caption(import_error)
+
+    with manual_tab:
+        viral_title = st.text_input("拆解标题", placeholder="粘贴爆款笔记标题", key="viral_note_title")
+        viral_body = st.text_area("拆解正文", placeholder="粘贴爆款笔记正文", height=180, key="viral_note_body")
+        if st.button("开始爆款拆解", type="primary", use_container_width=True, key="viral_analysis_button"):
+            if not viral_title.strip() and not viral_body.strip():
+                st.warning("请先粘贴需要拆解的标题或正文。")
+            else:
+                with st.spinner("正在进行爆款笔记拆解..."):
+                    viral_analysis = analyze_viral_note(viral_title.strip(), viral_body.strip())
+                st.session_state["viral_note_analysis"] = viral_analysis
+                st.session_state["viral_note_analysis_error"] = "" if viral_analysis else get_last_error()
+        viral_analysis = st.session_state.get("viral_note_analysis")
+        viral_analysis_error = st.session_state.get("viral_note_analysis_error", "")
+        if viral_analysis:
+            render_viral_note_analysis(viral_analysis)
+        elif viral_analysis_error:
+            st.warning(f"爆款拆解失败：{viral_analysis_error}")
+
+
+def render_creator_profile_page(profile: dict[str, str]) -> None:
+    render_page_hero(
+        "创作者资料",
+        "管理个人身份、服务和内容风格",
+        "AI只会使用你确认保存的资料，不会主动虚构经历和数据。",
+    )
+    notice = st.session_state.pop("creator_profile_notice", "")
+    if notice:
+        st.success(notice)
+    render_creator_profile_editor(profile)
+
+
 def main() -> None:
     st.set_page_config(
-        page_title="NoteGuard AI",
+        page_title="AI Reviewer",
         page_icon=":material/rate_review:",
         layout="wide",
     )
     render_styles()
 
-    if "review_started" not in st.session_state:
-        st.session_state["review_started"] = False
-    if "uploader_key" not in st.session_state:
-        st.session_state["uploader_key"] = 0
-    if "is_reviewing" not in st.session_state:
-        st.session_state["is_reviewing"] = False
+    for key, default in (
+        ("review_started", False),
+        ("uploader_key", 0),
+        ("is_reviewing", False),
+        ("draft_title", ""),
+        ("draft_body", ""),
+        ("draft_image_text", ""),
+    ):
+        if key not in st.session_state:
+            st.session_state[key] = default
 
+    navigation_descriptions = {
+        "创作工作台": "审核、改写、生成与发布检查",
+        "封面诊断": "上传封面并分析文字与点击吸引力",
+        "爆款拆解": "通过链接或手动内容分析优秀笔记",
+        "历史记录": "查看过去的审核与生成结果",
+        "规则管理": "维护动态审核规则",
+        "创作者资料": "管理个人身份、服务和内容风格",
+    }
+    with st.sidebar:
+        st.markdown("## AI Reviewer")
+        st.caption("教育内容运营助手")
+        workspace_page = st.radio(
+            "导航",
+            list(navigation_descriptions),
+            label_visibility="collapsed",
+        )
+        st.markdown(
+            f'<div class="sidebar-note">{escape(navigation_descriptions[workspace_page])}</div>',
+            unsafe_allow_html=True,
+        )
+        st.caption("功能说明")
+        for item, description in navigation_descriptions.items():
+            st.markdown(
+                f'<div class="sidebar-note"><strong>{escape(item)}</strong>：{escape(description)}</div>',
+                unsafe_allow_html=True,
+            )
+
+    rules = get_rules()
+    creator_profile = load_creator_profile(CREATOR_PROFILE_PATH)
+    if workspace_page == "规则管理":
+        render_rule_management()
+        return
+    if workspace_page == "封面诊断":
+        render_cover_diagnosis_page(rules)
+        return
+    if workspace_page == "爆款拆解":
+        render_viral_workspace()
+        return
+    if workspace_page == "历史记录":
+        render_page_hero("历史记录", "查看过去的审核与生成结果", "最近 10 条记录保存在本地，可按已有结果类型筛选和展开查看。")
+        render_history_section()
+        return
+    if workspace_page == "创作者资料":
+        render_creator_profile_page(creator_profile)
+        return
+
+    render_page_hero(
+        "AI Reviewer",
+        "小红书教育内容智能优化助手",
+        "输入标题和正文，完成风险检测、内容改写和发布前检查。",
+    )
     st.markdown(
-        """
-        <div class="hero">
-            <h1>NoteGuard AI</h1>
-            <p>小红书教育内容AI初审助手</p>
-            <div class="notice">AI仅提供初审提示，最终以人工审核为准。</div>
-        </div>
-        """,
+        '<div class="step-indicator"><span class="active">① 准备内容</span><span>② 内容诊断</span><span>③ AI优化</span><span>④ 发布检查</span></div>',
         unsafe_allow_html=True,
     )
     completion_placeholder = st.empty()
     progress_placeholder = st.empty()
 
-    rules = get_rules()
+    workspace_notice = st.session_state.pop("workspace_notice", "")
+    if workspace_notice:
+        st.info(workspace_notice)
 
-    left, right = st.columns([0.9, 1.1], gap="large")
-    with left:
-        with st.container(border=True):
-            st.markdown("### 输入区")
-            title = st.text_input("标题输入", placeholder="请输入小红书标题", key="title_input")
+    with st.container(border=True):
+        st.markdown('<div class="module-eyebrow">① 准备内容</div>', unsafe_allow_html=True)
+        st.markdown('<div class="module-title">输入一条准备发布的内容</div>', unsafe_allow_html=True)
+        if "title_input" not in st.session_state:
+            st.session_state["title_input"] = st.session_state["draft_title"]
+        if "body_input" not in st.session_state:
+            st.session_state["body_input"] = st.session_state["draft_body"]
+        input_left, input_right = st.columns([1.35, 0.85], gap="large")
+        with input_left:
+            title = st.text_input(
+                "标题",
+                placeholder="请输入小红书标题",
+                key="title_input",
+                on_change=sync_content_draft,
+            )
             body = st.text_area(
-                "正文/脚本输入",
+                "正文/脚本",
                 placeholder="请输入正文、视频脚本或封面文案",
-                height=240,
+                height=180,
                 key="body_input",
+                on_change=sync_content_draft,
+            )
+        with input_right:
+            st.markdown(
+                """
+                <div class="experience-card">
+                    <strong>✨ 新手体验</strong>
+                    <p>不知道从哪里开始？一键加载教育内容示例，体验完整审核流程。</p>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+            st.button(
+                "✨ 一键体验案例",
+                use_container_width=True,
+                on_click=load_experience_case,
+                key="load_experience_case_button",
             )
             uploaded_image = st.file_uploader(
-                "图片上传与预览",
+                "上传封面图片（可选）",
                 type=["png", "jpg", "jpeg", "webp"],
                 accept_multiple_files=False,
                 key=f"image_upload_{st.session_state['uploader_key']}",
             )
-
             if uploaded_image:
                 image_bytes = uploaded_image.getvalue()
-                st.image(image_bytes, caption="图片预览", use_container_width=True)
-                st.text_area(
-                    "手动输入图片中的文字",
-                    placeholder="请把封面图、海报图中的文字复制或手动输入到这里",
-                    height=120,
-                    key="image_text_input",
-                )
+                st.session_state["uploaded_image_data"] = image_bytes
+                ensure_cover_ocr(image_bytes)
+                auto_analyze_cover_once(image_bytes, rules)
+            active_image_bytes = get_current_image_bytes()
+            if active_image_bytes:
+                st.image(active_image_bytes, caption="封面已添加，可在“封面诊断”继续处理", use_container_width=True)
+                if st.session_state.get("cover_analysis"):
+                    st.caption("封面文字已自动识别并完成分析，可在“封面诊断”查看详情。")
+                else:
+                    st.caption("封面文字识别与 AI 分析已移至“封面诊断”。")
 
+        action_left, action_right = st.columns([2, 1])
+        with action_left:
             review_button_slot = st.empty()
             start_review = review_button_slot.button(
-                "开始审核",
+                "开始内容诊断",
                 type="primary",
                 use_container_width=True,
                 disabled=st.session_state["is_reviewing"],
                 key="start_review_button",
             )
-            if start_review:
-                st.session_state["is_reviewing"] = True
-                st.session_state["review_started"] = True
-                review_button_slot.button(
-                    "正在审核...",
-                    type="primary",
-                    use_container_width=True,
-                    disabled=True,
-                    key="reviewing_button",
+        with action_right:
+            if st.button("清空内容", use_container_width=True, key="request_clear_content"):
+                st.session_state["confirm_clear_content"] = True
+            if st.session_state.get("confirm_clear_content"):
+                st.warning("确认后会清空当前输入、封面和本次结果。")
+                confirm_left, cancel_right = st.columns(2)
+                confirm_left.button(
+                    "确认清空",
+                    key="confirm_clear_content_button",
+                    on_click=reset_review,
                 )
-                render_review_loading(progress_placeholder, completion_placeholder)
-                st.session_state["is_reviewing"] = False
+                if cancel_right.button("取消", key="cancel_clear_content_button"):
+                    st.session_state["confirm_clear_content"] = False
+            st.button("恢复最近一次输入", use_container_width=True, on_click=restore_last_input)
+        if start_review:
+            st.session_state["last_content_snapshot"] = {
+                "title": title,
+                "body": body,
+                "image_text": st.session_state.get("draft_image_text", ""),
+            }
+            st.session_state["is_reviewing"] = True
+            st.session_state["review_started"] = True
+            st.session_state["review_run_id"] = uuid4().hex
+            review_button_slot.button(
+                "正在诊断...",
+                type="primary",
+                use_container_width=True,
+                disabled=True,
+                key="reviewing_button",
+            )
+            render_review_loading(progress_placeholder, completion_placeholder)
+            st.session_state["is_reviewing"] = False
 
-            st.button("清空并审核下一条", use_container_width=True, on_click=reset_review)
+    image_text = st.session_state.get("draft_image_text", "")
+    active_image_bytes = get_current_image_bytes()
+    has_image = bool(active_image_bytes)
+    has_review = st.session_state["review_started"] and bool(
+        title.strip() or body.strip() or has_image
+    )
 
-    with right:
-        if not st.session_state["review_started"]:
-            with st.container(border=True):
-                st.markdown("### 审核结果")
-                st.info("输入标题或正文后，点击“开始审核”查看完整审核结果。")
-            return
-
-        image_text = st.session_state.get("image_text_input", "")
-
-        if not title.strip() and not body.strip() and not uploaded_image:
-            with st.container(border=True):
-                st.markdown("### 审核结果")
-                st.warning("请先输入标题、正文或上传图片。")
-            return
-
+    if has_review:
         findings = check_text(title=title, body=body, rules=rules)
-        rewrite_result = rewrite_all(title, body, findings)
+        rewrite_key = json.dumps(
+            {
+                "title": title,
+                "body": body,
+                "risk_items": [
+                    (item.term, item.position, item.severity, item.suggestion)
+                    for item in findings
+                ],
+            },
+            ensure_ascii=False,
+        )
+        if st.session_state.get("safe_rewrite_key") == rewrite_key:
+            rewrite_result = st.session_state["safe_rewrite_result"]
+        else:
+            rewrite_result = rewrite_with_local_rules(title, body, findings)
+        if st.session_state.get("title_generation_key") == rewrite_key:
+            title_candidates = st.session_state.get("title_candidates", [])
+            title_candidate_reviews = st.session_state.get("title_candidate_reviews", [])
+            title_generation_error = st.session_state.get("title_generation_error", "")
+        else:
+            title_candidates = []
+            title_candidate_reviews = []
+            title_generation_error = ""
         rewritten_title = rewrite_result.title
         rewritten_body = rewrite_result.body
         title_changes = build_rewrite_changes(findings, "标题")
         body_changes = build_rewrite_changes(findings, "正文")
         risk_level, risk_summary, risk_class = get_risk_level(findings)
-        review_text = build_review_text(
-            findings=findings,
-            rewritten_title=rewritten_title,
-            rewritten_body=rewritten_body,
-        )
+        safety_score, safety_status = get_content_safety_score(findings)
         highlighted_title = build_highlighted_text(title, findings, "标题")
         highlighted_body = build_highlighted_text(body, findings, "正文")
         risk_detail_rows = build_risk_detail_rows(findings)
-        image_review = review_image(image_text if uploaded_image else "", rules)
+
+        cover_analysis = None
+        cover_analysis_error = ""
+        cover_ocr_lines: list[str] = st.session_state.get("cover_ocr_lines", [])
+        if has_image:
+            image_bytes = active_image_bytes
+            image_key = hashlib.sha256(image_bytes).hexdigest()
+            if st.session_state.get("cover_analysis_image_key") == image_key:
+                cover_analysis = st.session_state.get("cover_analysis")
+                cover_analysis_error = st.session_state.get("cover_analysis_error", "")
+                cover_ocr_lines = st.session_state.get("cover_ocr_lines", [])
+
+        review_run_id = st.session_state.get("review_run_id") or uuid4().hex
+        st.session_state["review_run_id"] = review_run_id
+        upsert_history_record(
+            create_history_record(
+                record_id=review_run_id,
+                title=title,
+                body=body,
+                safety_score=safety_score,
+                risk_level=risk_level,
+                risk_items=risk_detail_rows,
+                rewritten_title=rewritten_title,
+                rewritten_body=rewritten_body,
+                image_ocr_text="\n".join(cover_ocr_lines),
+                title_candidates=title_candidates,
+                cover_analysis=cover_analysis,
+            )
+        )
+        image_review = review_image(image_text if has_image else "", rules)
         safe_term_hits = build_safe_term_hits(
             title=title,
-            body=f"{body}\n{image_text if uploaded_image else ''}",
+            body=f"{body}\n{image_text if has_image else ''}",
         )
 
-        with st.container(border=True):
-            st.markdown("### ① 整体风险等级")
+    with st.container(border=True):
+        st.markdown('<div class="module-eyebrow">② 内容诊断</div>', unsafe_allow_html=True)
+        st.markdown('<div class="module-title">审核结果</div>', unsafe_allow_html=True)
+        if not has_review:
+            st.info("输入标题或正文后，点击“开始内容诊断”查看风险结果。")
+        else:
+            metric_score, metric_level, metric_terms, metric_changes = st.columns(4)
+            metric_score.metric("安全评分", f"{safety_score}/100")
+            metric_level.metric("风险等级", risk_level)
+            metric_terms.metric("风险数量", len(findings))
+            metric_changes.metric("修改建议", len(risk_detail_rows))
             st.markdown(
-                f'<span class="risk-badge {risk_class}">{risk_level}</span>',
+                f'<span class="risk-badge {risk_class}">{safety_status}</span>',
                 unsafe_allow_html=True,
             )
-            st.write(risk_summary)
+            st.markdown(f'<div class="diagnostic-note">{escape(risk_summary)}</div>', unsafe_allow_html=True)
+            risk_tab, suggestion_tab = st.tabs(["风险问题", "修改建议"])
+            with risk_tab:
+                if title.strip():
+                    st.markdown('<div class="highlighted-label">标题</div>', unsafe_allow_html=True)
+                    st.markdown(
+                        f'<div class="highlighted-original">{highlighted_title}</div>',
+                        unsafe_allow_html=True,
+                    )
+                if body.strip():
+                    st.markdown('<div class="highlighted-label">正文</div>', unsafe_allow_html=True)
+                    st.markdown(
+                        f'<div class="highlighted-original">{highlighted_body}</div>',
+                        unsafe_allow_html=True,
+                    )
+                if not findings:
+                    st.success("当前未发现明显风险，可继续进行内容优化。")
+                elif risk_detail_rows:
+                    st.dataframe(risk_detail_rows, use_container_width=True, hide_index=True)
+            with suggestion_tab:
+                if findings:
+                    st.caption("以下建议来自当前规则库，可在安全改写中生成完整版本。")
+                    st.dataframe(risk_detail_rows, use_container_width=True, hide_index=True)
+                render_safe_term_hits(safe_term_hits)
 
-        with st.container(border=True):
-            st.markdown("### ② 卖点提示")
-            render_safe_term_hits(safe_term_hits)
-
-        with st.container(border=True):
-            st.markdown("### ③ 高亮后的原文")
-            if title.strip():
-                st.markdown('<div class="highlighted-label">标题</div>', unsafe_allow_html=True)
-                st.markdown(
-                    f'<div class="highlighted-original">{highlighted_title}</div>',
-                    unsafe_allow_html=True,
-                )
-            if body.strip():
-                st.markdown('<div class="highlighted-label">正文</div>', unsafe_allow_html=True)
-                st.markdown(
-                    f'<div class="highlighted-original">{highlighted_body}</div>',
-                    unsafe_allow_html=True,
-                )
-            if not findings:
-                st.caption("未命中风险词，原文无需高亮。")
-
-        with st.container(border=True):
-            st.markdown("### ④ 图片审核")
-            render_image_review(image_review, uploaded_image is not None)
-
-        with st.container(border=True):
-            st.markdown("### ⑤ 风险详情")
-            if risk_detail_rows:
-                st.dataframe(risk_detail_rows, use_container_width=True, hide_index=True)
+    with st.container(border=True):
+        st.markdown('<div class="module-eyebrow">③ AI优化</div>', unsafe_allow_html=True)
+        st.markdown('<div class="module-title">让内容更适合发布</div>', unsafe_allow_html=True)
+        rewrite_tab, title_tab, note_tab = st.tabs(["安全改写", "标题生成", "完整笔记"])
+        with rewrite_tab:
+            if not has_review:
+                st.info("完成审核后，可在这里生成安全版文案。")
             else:
-                st.success("未命中当前规则库中的疑似风险词。")
-
-        with st.container(border=True):
-            st.markdown("### ⑥ AI改写建议")
-            st.caption(
-                build_rewrite_status_note(
-                    findings,
-                    source=rewrite_result.source,
-                    error=rewrite_result.error,
+                rewrite_label = "重新生成安全版" if st.session_state.get("safe_rewrite_key") == rewrite_key else "一键生成安全版"
+                if st.button(rewrite_label, type="primary", use_container_width=True, key="safe_rewrite_button"):
+                    with st.spinner("正在生成安全版文案..."):
+                        st.session_state["safe_rewrite_result"] = rewrite_all(
+                            title,
+                            body,
+                            findings,
+                            creator_profile=creator_profile,
+                        )
+                        st.session_state["safe_rewrite_key"] = rewrite_key
+                    st.rerun()
+                st.caption(
+                    build_rewrite_status_note(
+                        findings,
+                        source=rewrite_result.source,
+                        error=rewrite_result.error,
+                    )
                 )
+                st.text_input("改写后标题", value=rewritten_title, key="rewritten_title_display")
+                st.text_area("改写后正文", value=rewritten_body, height=170, key="rewritten_body_display")
+                if rewrite_result.reason:
+                    st.write(f"修改原因：{rewrite_result.reason}")
+                with st.expander("查看修改记录"):
+                    render_rewrite_changes(title, body, findings, title_changes, body_changes)
+                render_copy_buttons(rewritten_title, rewritten_body, rewrite_result.reason)
+
+        with title_tab:
+            if not has_review:
+                st.info("完成审核后，可根据当前内容生成高点击标题。")
+            else:
+                title_button_label = "重新生成5个标题" if title_candidates else "生成5个高点击标题"
+                if st.button(title_button_label, type="primary", use_container_width=True, key="title_generation_button"):
+                    with st.spinner("正在生成标题候选..."):
+                        candidates = generate_title_candidates(
+                            title,
+                            body,
+                            findings,
+                            creator_profile=creator_profile,
+                        )
+                        reviews = review_title_candidates(candidates, rules) if candidates else []
+                        st.session_state["title_generation_key"] = rewrite_key
+                        st.session_state["title_candidates"] = [review.safe_title for review in reviews]
+                        st.session_state["title_candidate_reviews"] = reviews
+                        st.session_state["title_generation_error"] = "" if candidates else get_last_error()
+                    st.rerun()
+                if title_candidate_reviews:
+                    render_title_candidate_reviews(title_candidate_reviews)
+                elif title_candidates:
+                    render_title_candidates(title_candidates)
+                elif title_generation_error:
+                    st.warning(f"标题生成失败：{title_generation_error}")
+
+        with note_tab:
+            if "note_generation_topic" not in st.session_state:
+                st.session_state["note_generation_topic"] = st.session_state.get("draft_title", "")
+            topic = st.text_input(
+                "主题/关键词（可选）",
+                placeholder="默认使用当前标题，也可补充一个更具体的主题",
+                key="note_generation_topic",
             )
-            st.text_input("改写后标题", value=rewritten_title)
-            st.text_area("改写后正文", value=rewritten_body, height=170)
-            render_rewrite_changes(title, body, findings, title_changes, body_changes)
-            render_copy_buttons(rewritten_title, rewritten_body, review_text)
+            with st.expander("生成设置（可选）"):
+                content_goal = st.selectbox(
+                    "内容目的",
+                    ["干货分享", "建立信任", "服务介绍", "家长共鸣"],
+                    key="note_content_goal",
+                )
+                writing_intensity = st.selectbox(
+                    "文案强度",
+                    ["克制", "自然", "有转化力"],
+                    index=1,
+                    key="note_writing_intensity",
+                )
+                include_intro = st.checkbox("加入个人介绍", key="note_include_intro")
+                include_service = st.checkbox("加入服务信息", key="note_include_service")
+                include_action = st.checkbox("加入行动引导", key="note_include_action")
+                target_length = st.number_input(
+                    "目标字数",
+                    min_value=300,
+                    max_value=1500,
+                    value=700,
+                    step=100,
+                    key="note_target_length",
+                )
+            if st.button("生成完整小红书笔记", type="primary", use_container_width=True, key="note_generation_button"):
+                note_topic = topic.strip() or title.strip()
+                if not note_topic:
+                    st.warning("请先输入主题或关键词。")
+                else:
+                    generation_options = {
+                        "content_goal": content_goal,
+                        "writing_intensity": writing_intensity,
+                        "include_intro": include_intro,
+                        "include_service": include_service,
+                        "include_action": include_action,
+                        "target_length": target_length,
+                    }
+                    with st.spinner("正在生成小红书笔记..."):
+                        note_result = generate_xiaohongshu_note(
+                            note_topic,
+                            creator_profile=creator_profile,
+                            generation_options=generation_options,
+                        )
+                    st.session_state["note_generation_result"] = note_result
+                    st.session_state["note_generation_error"] = "" if note_result else get_last_error()
+            generated_note = st.session_state.get("note_generation_result")
+            note_generation_error = st.session_state.get("note_generation_error", "")
+            if generated_note:
+                render_generated_note(generated_note, rules)
+            elif note_generation_error:
+                st.warning(f"笔记生成失败：{note_generation_error}")
+
+    with st.container(border=True):
+        st.markdown('<div class="module-eyebrow">④ 发布检查</div>', unsafe_allow_html=True)
+        st.markdown('<div class="module-title">发布前最后检查</div>', unsafe_allow_html=True)
+        with st.expander("展开发布检查", expanded=False):
+            if not has_review:
+                st.info("完成当前内容诊断后，可生成发布前体检报告。")
+            else:
+                checklist = [
+                    ("标题安全", "已完成" if not any(item.position == "标题" for item in findings) else "需优化"),
+                    ("正文安全", "已完成" if not any(item.position == "正文" for item in findings) else "需优化"),
+                    ("封面是否已检查", "已检查" if cover_analysis else ("已上传，待检查" if has_image else "未上传")),
+                    ("是否存在绝对化承诺", "需结合风险详情确认" if findings else "未发现"),
+                    ("是否包含未经确认的数据", "请人工确认"),
+                    ("是否包含明确行动引导", "请人工确认"),
+                ]
+                st.dataframe(
+                    [{"检查项": label, "状态": status} for label, status in checklist],
+                    use_container_width=True,
+                    hide_index=True,
+                )
+                report_key = json.dumps(
+                    {
+                        "rewrite_key": rewrite_key,
+                        "safety_score": safety_score,
+                        "safe_title": rewritten_title,
+                        "safe_body": rewritten_body,
+                        "cover_analysis": cover_analysis,
+                    },
+                    ensure_ascii=False,
+                    sort_keys=True,
+                )
+                if st.button("生成发布前体检报告", type="primary", use_container_width=True, key="pre_publish_report_button"):
+                    with st.spinner("正在生成发布前体检报告..."):
+                        report = generate_pre_publish_report(
+                            title=title,
+                            body=body,
+                            risk_items=findings,
+                            safety_score=safety_score,
+                            safe_rewrite={"title": rewritten_title, "body": rewritten_body},
+                            cover_analysis=cover_analysis,
+                        )
+                    st.session_state["pre_publish_report_key"] = report_key
+                    st.session_state["pre_publish_report"] = report
+                    st.session_state["pre_publish_report_error"] = "" if report else get_last_error()
+
+                if st.session_state.get("pre_publish_report_key") == report_key:
+                    report = st.session_state.get("pre_publish_report")
+                    report_error = st.session_state.get("pre_publish_report_error", "")
+                    if report:
+                        render_pre_publish_report(report)
+                    elif report_error:
+                        st.warning(f"体检报告生成失败：{report_error}")
+                elif st.session_state.get("pre_publish_report"):
+                    st.caption("审核内容已更新，请重新生成体检报告。")
 
 
 if __name__ == "__main__":

@@ -28,6 +28,13 @@
     "severity": "high"
   },
   {
+    "category": "产品板块",
+    "term": "校内",
+    "reason": "涉及校内场景或学校体系表达，容易触发审核风险。",
+    "suggestion": "删除",
+    "severity": "high"
+  },
+  {
     "category": "效果承诺",
     "term": "分数",
     "reason": "疑似学习结果或成绩承诺表达。",
@@ -46,6 +53,48 @@
     "term": "提分",
     "reason": "疑似成绩提升承诺表达。",
     "suggestion": "提升",
+    "severity": "high"
+  },
+  {
+    "category": "效果承诺",
+    "term": "涨分",
+    "reason": "疑似成绩提升承诺表达。",
+    "suggestion": "逐步提升",
+    "severity": "high"
+  },
+  {
+    "category": "效果承诺",
+    "term": "保证",
+    "reason": "疑似确定性学习结果承诺。",
+    "suggestion": "",
+    "severity": "high"
+  },
+  {
+    "category": "效果承诺",
+    "term": "保过",
+    "reason": "疑似通过结果承诺。",
+    "suggestion": "",
+    "severity": "high"
+  },
+  {
+    "category": "效果承诺",
+    "term": "包过",
+    "reason": "疑似通过结果承诺。",
+    "suggestion": "",
+    "severity": "high"
+  },
+  {
+    "category": "效果承诺",
+    "term": "满分",
+    "reason": "疑似绝对化成绩结果承诺。",
+    "suggestion": "",
+    "severity": "high"
+  },
+  {
+    "category": "效果承诺",
+    "term": "逆袭",
+    "reason": "疑似夸张的学习结果承诺。",
+    "suggestion": "",
     "severity": "high"
   },
   {
@@ -119,25 +168,32 @@
     "severity": "high"
   },
   {
-    "category": "产品板块",
-    "term": "课",
-    "reason": "课程直接表达在当前规则中不建议出现。",
-    "suggestion": "",
-    "severity": "medium"
+    "category": "普通教育表达",
+    "term": "课程",
+    "reason": "普通课程表达可正常使用，仅建议避免与效果承诺、绝对化宣传组合。",
+    "suggestion": "学习内容",
+    "severity": "low"
   },
   {
     "category": "产品板块",
     "term": "孩子",
-    "reason": "当前规则建议使用更安全的人群称呼。",
+    "reason": "教育内容中建议使用更自然的家长用户表达。",
     "suggestion": "娃",
+    "severity": "low"
+  },
+  {
+    "category": "人群表达",
+    "term": "差生",
+    "reason": "对学习者的负面标签表达，建议改为更尊重且具体的学习状态描述。",
+    "suggestion": "基础薄弱的学习者",
     "severity": "medium"
   },
   {
-    "category": "产品板块",
+    "category": "普通教育表达",
     "term": "学生",
-    "reason": "当前规则建议使用更安全的人群称呼。",
-    "suggestion": "学员",
-    "severity": "medium"
+    "reason": "普通人群表达可正常使用，仅建议避免与效果承诺、夸张营销组合。",
+    "suggestion": "学习者",
+    "severity": "low"
   },
   {
     "category": "产品板块",
@@ -182,11 +238,11 @@
     "severity": "medium"
   },
   {
-    "category": "学科板块",
+    "category": "普通教育表达",
     "term": "数学",
-    "reason": "学科不能单独出现，建议使用更合规表达。",
+    "reason": "普通学科表达可正常使用，仅建议避免与效果承诺、夸张宣传组合。",
     "suggestion": "数理思维",
-    "severity": "medium"
+    "severity": "low"
   },
   {
     "category": "学科板块",
