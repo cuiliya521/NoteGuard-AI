@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import asdict
 import json
 import hashlib
 import time
@@ -22,9 +23,27 @@ from services.creator_profile import (
 )
 from services.image_reviewer import ImageReviewResult, review_image
 from services.image_ocr import extract_text_with_status
-from services.link_importer import LinkImportError, import_public_page
+from services.image_input import (
+    ImageInputError,
+    normalize_image_input,
+    store_image_payload,
+)
+from services.clipboard_image import extract_pasted_image, load_paste_image_button
+from services.link_importer import (
+    LinkImportError,
+    download_public_image,
+    import_public_page,
+)
+from services.note_generator import (
+    CONTENT_DIRECTIONS,
+    LENGTH_RANGES,
+    build_generation_request_key,
+    finalize_generated_note,
+    get_structure_guidance,
+)
 from services.llm import (
     analyze_cover,
+    analyze_viral_image,
     analyze_viral_note,
     generate_pre_publish_report,
     generate_title_candidates,
@@ -32,10 +51,14 @@ from services.llm import (
     get_last_error,
 )
 from services.rewriter import (
+    LineReviewItem,
     RewriteChange,
     TitleCandidateReview,
     build_rewrite_changes,
+    build_line_review_items,
     build_rewrite_status_note,
+    build_supplier_feedback,
+    get_line_review_progress,
     rewrite_all,
     review_title_candidates,
     rewrite_with_local_rules,
@@ -54,6 +77,12 @@ from services.rule_checker import (
     load_rule_records,
     load_rules,
     update_rule_record,
+)
+from services.viral_analyzer import (
+    IMAGE_INFERENCE_NOTICE,
+    build_viral_image_context,
+    can_analyze_viral_input,
+    store_viral_image_payload,
 )
 
 
@@ -87,11 +116,20 @@ def reset_review() -> None:
     st.session_state["draft_body"] = ""
     st.session_state["draft_image_text"] = ""
     st.session_state.pop("uploaded_image_data", None)
+    st.session_state.pop("current_image_source", None)
+    st.session_state.pop("current_image_bytes", None)
+    st.session_state.pop("current_image_hash", None)
+    st.session_state.pop("current_image_preview", None)
+    st.session_state.pop("last_seen_upload_hash", None)
+    st.session_state.pop("last_seen_clipboard_hash", None)
+    st.session_state.pop("image_input_error", None)
     st.session_state["confirm_clear_content"] = False
     st.session_state["review_started"] = False
     st.session_state["is_reviewing"] = False
     st.session_state.pop("safe_rewrite_key", None)
     st.session_state.pop("safe_rewrite_result", None)
+    st.session_state.pop("line_review_key", None)
+    st.session_state.pop("line_review_statuses", None)
     st.session_state.pop("title_generation_key", None)
     st.session_state.pop("title_candidates", None)
     st.session_state.pop("title_generation_error", None)
@@ -110,6 +148,8 @@ def reset_review() -> None:
     st.session_state.pop("cover_analysis_source", None)
     st.session_state.pop("note_generation_result", None)
     st.session_state.pop("note_generation_error", None)
+    st.session_state.pop("note_generation_key", None)
+    st.session_state.pop("note_regenerate_requested", None)
     st.session_state.pop("pre_publish_report_key", None)
     st.session_state.pop("pre_publish_report", None)
     st.session_state.pop("pre_publish_report_error", None)
@@ -128,6 +168,8 @@ def load_experience_case() -> None:
     st.session_state["is_reviewing"] = False
     st.session_state.pop("safe_rewrite_key", None)
     st.session_state.pop("safe_rewrite_result", None)
+    st.session_state.pop("line_review_key", None)
+    st.session_state.pop("line_review_statuses", None)
     st.session_state.pop("title_generation_key", None)
     st.session_state.pop("title_candidates", None)
     st.session_state.pop("title_generation_error", None)
@@ -146,6 +188,8 @@ def load_experience_case() -> None:
     st.session_state.pop("cover_analysis_source", None)
     st.session_state.pop("note_generation_result", None)
     st.session_state.pop("note_generation_error", None)
+    st.session_state.pop("note_generation_key", None)
+    st.session_state.pop("note_regenerate_requested", None)
     st.session_state.pop("pre_publish_report_key", None)
     st.session_state.pop("pre_publish_report", None)
     st.session_state.pop("pre_publish_report_error", None)
@@ -246,137 +290,211 @@ def render_styles() -> None:
     st.markdown(
         """
         <style>
+        :root {
+            --ng-primary: #d94b57;
+            --ng-primary-hover: #c53f4c;
+            --ng-primary-soft: #fff1f2;
+            --ng-text: #1f2937;
+            --ng-muted: #667085;
+            --ng-subtle: #98a2b3;
+            --ng-canvas: #f7f8fa;
+            --ng-surface: #ffffff;
+            --ng-border: #e5e7eb;
+            --ng-success: #22c55e;
+            --ng-warning: #f59e0b;
+            --ng-danger: #ef4444;
+        }
+        html, body, [class*="st-"] {
+            font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont,
+                "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+        }
         .stApp {
-            background: #f8f8fa;
-            color: #1f2937;
+            background: var(--ng-canvas);
+            color: var(--ng-text);
         }
         .block-container {
-            padding-top: 1.5rem;
-            padding-bottom: 3rem;
+            padding-top: 2rem;
+            padding-right: 2rem;
+            padding-bottom: 3.5rem;
+            padding-left: 2rem;
             max-width: 1180px;
         }
         .hero {
-            background: linear-gradient(135deg, #fff7f8 0%, #ffffff 68%);
-            border: 1px solid #f5d8dc;
-            border-radius: 14px;
-            padding: 26px 30px;
-            margin-bottom: 20px;
-            box-shadow: 0 12px 30px rgba(68, 24, 30, 0.05);
+            padding: 4px 2px 22px;
+            margin-bottom: 10px;
+            border-bottom: 1px solid var(--ng-border);
         }
         .hero h1 {
             margin: 0;
             font-size: 32px;
-            line-height: 1.15;
-            color: #242024;
+            line-height: 1.2;
+            color: var(--ng-text);
             letter-spacing: 0;
+            font-weight: 720;
         }
         .hero p {
-            margin: 7px 0 0;
-            color: #6b5860;
-            font-size: 15px;
-            font-weight: 600;
+            margin: 8px 0 0;
+            color: var(--ng-muted);
+            font-size: 17px;
+            font-weight: 500;
         }
         .notice {
-            margin-top: 12px;
-            padding: 10px 12px;
-            border-radius: 8px;
-            background: rgba(255, 255, 255, 0.8);
-            border: 1px solid #f0e3e5;
-            color: #6b4c55;
+            margin-top: 7px;
+            color: var(--ng-muted);
             font-size: 14px;
+            line-height: 1.6;
         }
         .step-indicator {
             display: flex;
             flex-wrap: wrap;
             gap: 8px;
-            margin: 0 0 18px;
-            color: #6b6470;
-            font-size: 14px;
+            margin: 4px 0 20px;
+            color: var(--ng-muted);
+            font-size: 13px;
             font-weight: 600;
         }
         .step-indicator span {
-            padding: 6px 10px;
-            border: 1px solid #e6e4e8;
-            border-radius: 999px;
-            background: #ffffff;
+            padding: 5px 10px;
+            border: 1px solid var(--ng-border);
+            border-radius: 8px;
+            background: var(--ng-surface);
         }
         .step-indicator .active {
-            color: #a33445;
-            border-color: #edc7ce;
-            background: #fff7f8;
+            color: #a93240;
+            border-color: #f3c8cd;
+            background: var(--ng-primary-soft);
+        }
+        [data-testid="stSidebar"] {
+            width: 276px !important;
+            min-width: 276px !important;
+            background: #ffffff;
+            border-right: 1px solid var(--ng-border);
+        }
+        [data-testid="stSidebar"] [data-testid="stSidebarContent"] {
+            padding: 1.2rem 0.9rem;
+        }
+        [data-testid="stSidebar"] h2 {
+            margin: 0 0 2px;
+            color: var(--ng-text);
+            font-size: 21px;
+            font-weight: 750;
+        }
+        [data-testid="stSidebar"] [data-testid="stCaptionContainer"] {
+            color: var(--ng-muted);
+            font-size: 13px;
+        }
+        [data-testid="stSidebar"] [role="radiogroup"] {
+            gap: 4px;
+            margin-top: 18px;
+        }
+        [data-testid="stSidebar"] label[data-baseweb="radio"] {
+            position: relative;
+            min-height: 42px;
+            margin: 0;
+            padding: 0 12px;
+            border-radius: 9px;
+            color: var(--ng-muted);
+            transition: background-color 120ms ease, color 120ms ease;
+        }
+        [data-testid="stSidebar"] label[data-baseweb="radio"] > div:first-child {
+            display: none;
+        }
+        [data-testid="stSidebar"] label[data-baseweb="radio"] p {
+            color: inherit;
+            font-size: 14px;
+            font-weight: 560;
+        }
+        [data-testid="stSidebar"] label[data-baseweb="radio"]:hover {
+            background: #f7f7f8;
+            color: var(--ng-text);
+        }
+        [data-testid="stSidebar"] label[data-baseweb="radio"]:has(input:checked) {
+            background: var(--ng-primary-soft);
+            color: var(--ng-text);
+        }
+        [data-testid="stSidebar"] label[data-baseweb="radio"]:has(input:checked)::before {
+            position: absolute;
+            left: 0;
+            top: 9px;
+            bottom: 9px;
+            width: 3px;
+            border-radius: 3px;
+            background: var(--ng-primary);
+            content: "";
         }
         .sidebar-note {
-            color: #78716c;
-            font-size: 12px;
-            line-height: 1.45;
-            margin: -2px 0 12px 6px;
+            color: var(--ng-muted);
+            font-size: 13px;
+            line-height: 1.55;
+            margin: 2px 2px 10px;
         }
         .experience-card {
             margin: 8px 0 14px;
-            padding: 12px 14px;
-            border: 1px solid #f2d8dc;
-            border-radius: 8px;
-            background: #fff8f9;
+            padding: 13px 14px;
+            border: 1px solid #f1dadd;
+            border-radius: 12px;
+            background: #fff7f8;
         }
         .experience-card strong {
             display: block;
             margin-bottom: 4px;
-            color: #a33445;
+            color: #a93240;
+            font-size: 15px;
         }
         .experience-card p {
             margin: 0;
-            color: #73545c;
+            color: var(--ng-muted);
             font-size: 14px;
             line-height: 1.5;
         }
         div[data-testid="stVerticalBlockBorderWrapper"] {
-            border-color: #e9e8ec;
-            border-radius: 12px;
-            background: #ffffff;
-            box-shadow: 0 6px 20px rgba(31, 35, 41, 0.035);
+            border: 1px solid var(--ng-border);
+            border-radius: 14px;
+            background: var(--ng-surface);
+            box-shadow: 0 1px 2px rgba(16, 24, 40, 0.025);
         }
         div[data-testid="stVerticalBlockBorderWrapper"] > div {
-            padding: 0.25rem;
+            padding: 0.35rem 0.45rem;
         }
         .module-eyebrow {
-            color: #a83b4a;
+            color: #b03644;
             font-size: 13px;
             font-weight: 700;
-            margin-bottom: 4px;
+            margin-bottom: 5px;
         }
         .module-title {
-            margin: 0 0 12px;
-            font-size: 21px;
-            color: #242024;
+            margin: 0 0 14px;
+            font-size: 22px;
+            line-height: 1.35;
+            color: var(--ng-text);
+            font-weight: 700;
         }
         .risk-badge {
             display: inline-block;
             border-radius: 999px;
-            padding: 6px 12px;
-            font-weight: 700;
+            padding: 4px 9px;
+            font-size: 13px;
+            font-weight: 650;
             margin-bottom: 8px;
         }
         .risk-high {
             background: #fef2f2;
             color: #b91c1c;
-            border: 1px solid #fecaca;
         }
         .risk-mid {
             background: #fffbeb;
             color: #b45309;
-            border: 1px solid #fde68a;
         }
         .risk-low {
             background: #ecfdf5;
             color: #047857;
-            border: 1px solid #a7f3d0;
         }
         .highlighted-original {
-            padding: 14px;
-            border-radius: 8px;
-            border: 1px solid #e5e7eb;
-            background: #ffffff;
-            line-height: 1.9;
+            padding: 14px 16px;
+            border-radius: 10px;
+            border: 1px solid var(--ng-border);
+            background: #fcfcfd;
+            line-height: 1.85;
             white-space: normal;
             word-break: break-word;
         }
@@ -394,10 +512,10 @@ def render_styles() -> None:
             font-weight: 700;
         }
         .rewrite-diff {
-            padding: 14px;
-            border-radius: 8px;
-            border: 1px solid #e5e7eb;
-            background: #ffffff;
+            padding: 14px 16px;
+            border-radius: 10px;
+            border: 1px solid var(--ng-border);
+            background: #fcfcfd;
             line-height: 2;
             word-break: break-word;
             margin: 6px 0 12px;
@@ -423,40 +541,199 @@ def render_styles() -> None:
             color: #374151;
         }
         .diagnostic-note {
-            color: #6b7280;
+            color: var(--ng-muted);
             font-size: 14px;
             line-height: 1.6;
         }
-        button[kind="primary"] {
-            background: #d84b5d !important;
-            border-color: #d84b5d !important;
+        [data-testid="stMetric"] {
+            min-height: 88px;
+            padding: 13px 15px;
+            border: 1px solid var(--ng-border);
+            border-radius: 12px;
+            background: #ffffff;
         }
-        button[kind="primary"]:hover {
-            background: #bd3d50 !important;
-            border-color: #bd3d50 !important;
+        [data-testid="stMetricLabel"] {
+            color: var(--ng-muted);
+            font-size: 13px;
         }
-        .stTabs [data-baseweb="tab-list"] {
-            gap: 8px;
-            border-bottom: 1px solid #eeeef1;
+        [data-testid="stMetricValue"] {
+            color: var(--ng-text);
+            font-size: 25px;
+            font-weight: 700;
         }
-        .stTabs [data-baseweb="tab"] {
-            height: 40px;
-            padding: 0 10px;
-            color: #6b6470;
+        [data-baseweb="input"],
+        [data-baseweb="textarea"],
+        [data-baseweb="select"] > div {
+            border-color: var(--ng-border) !important;
+            border-radius: 10px !important;
+            background: #ffffff !important;
+            box-shadow: none !important;
         }
-        .stTabs [aria-selected="true"] {
-            color: #c13f51 !important;
-            border-bottom-color: #d84b5d !important;
+        [data-baseweb="input"]:focus-within,
+        [data-baseweb="textarea"]:focus-within,
+        [data-baseweb="select"] > div:focus-within {
+            border-color: var(--ng-primary) !important;
+            box-shadow: 0 0 0 2px rgba(217, 75, 87, 0.10) !important;
         }
-        details {
-            border: 1px solid #ecebf0;
-            border-radius: 8px;
+        [data-testid="stTextInput"] label,
+        [data-testid="stTextArea"] label,
+        [data-testid="stSelectbox"] label,
+        [data-testid="stFileUploader"] label {
+            color: #344054;
+            font-size: 14px;
+            font-weight: 600;
+        }
+        textarea, input {
+            color: var(--ng-text) !important;
+            font-size: 15px !important;
+        }
+        textarea::placeholder, input::placeholder {
+            color: var(--ng-subtle) !important;
+            opacity: 1 !important;
+        }
+        [data-testid="stFileUploaderDropzone"] {
+            min-height: 112px;
+            border: 1px dashed #d0d5dd;
+            border-radius: 12px;
             background: #fcfcfd;
         }
+        [data-testid="stFileUploaderDropzone"]:hover {
+            border-color: #e5a1aa;
+            background: #fffafb;
+        }
+        button {
+            letter-spacing: 0 !important;
+        }
+        button[kind="primary"] {
+            min-height: 42px;
+            border-radius: 10px !important;
+            background: var(--ng-primary) !important;
+            border-color: var(--ng-primary) !important;
+            color: #ffffff !important;
+            box-shadow: none !important;
+            font-weight: 650 !important;
+        }
+        button[kind="primary"]:hover {
+            background: var(--ng-primary-hover) !important;
+            border-color: var(--ng-primary-hover) !important;
+        }
+        button[kind="secondary"] {
+            min-height: 40px;
+            border: 1px solid #d0d5dd !important;
+            border-radius: 10px !important;
+            background: #ffffff !important;
+            color: #344054 !important;
+            box-shadow: none !important;
+            font-weight: 600 !important;
+        }
+        button[kind="secondary"]:hover {
+            border-color: #98a2b3 !important;
+            background: #f9fafb !important;
+            color: var(--ng-text) !important;
+        }
+        .st-key-request_clear_content button,
+        .st-key-confirm_clear_content_button button {
+            border-color: #fecaca !important;
+            background: #ffffff !important;
+            color: #c2414d !important;
+        }
+        .st-key-request_clear_content button:hover,
+        .st-key-confirm_clear_content_button button:hover {
+            background: #fff1f2 !important;
+        }
+        .stTabs [data-baseweb="tab-list"] {
+            gap: 18px;
+            overflow-x: auto;
+            overflow-y: hidden;
+            scrollbar-width: thin;
+            border-bottom: 1px solid var(--ng-border);
+        }
+        .stTabs [data-baseweb="tab"] {
+            flex: 0 0 auto;
+            height: 42px;
+            padding: 0 2px;
+            color: var(--ng-muted);
+            font-size: 14px;
+            font-weight: 600;
+            white-space: nowrap;
+        }
+        .stTabs [aria-selected="true"] {
+            color: var(--ng-primary) !important;
+            border-bottom-color: var(--ng-primary) !important;
+            border-bottom-width: 2px !important;
+        }
+        [data-testid="stAlert"] {
+            border-radius: 10px;
+            border-width: 1px;
+            box-shadow: none;
+        }
+        [data-testid="stDataFrame"] {
+            overflow: hidden;
+            border: 1px solid var(--ng-border);
+            border-radius: 10px;
+        }
+        [data-testid="stExpander"] {
+            overflow: hidden;
+            border: 1px solid var(--ng-border);
+            border-radius: 10px;
+            background: #ffffff;
+        }
+        details {
+            border-color: var(--ng-border) !important;
+            border-radius: 10px !important;
+            background: #ffffff;
+        }
+        p, li {
+            line-height: 1.65;
+        }
+        h1, h2, h3, h4 {
+            color: var(--ng-text);
+            letter-spacing: 0;
+        }
+        h3 {
+            font-size: 22px;
+        }
+        h4 {
+            font-size: 17px;
+        }
+        [data-testid="stCaptionContainer"] {
+            color: var(--ng-muted);
+            font-size: 13px;
+        }
+        @media (max-width: 1024px) {
+            .block-container {
+                padding-right: 1.5rem;
+                padding-left: 1.5rem;
+            }
+            [data-testid="stMetricValue"] {
+                font-size: 22px;
+            }
+        }
         @media (max-width: 700px) {
-            .block-container { padding: 1rem; }
-            .hero { padding: 22px 20px; }
-            .hero h1 { font-size: 28px; }
+            .block-container {
+                padding: 1.25rem 1rem 2.5rem;
+            }
+            .hero {
+                padding-bottom: 18px;
+            }
+            .hero h1 {
+                font-size: 28px;
+            }
+            .hero p {
+                font-size: 16px;
+            }
+            .module-title {
+                font-size: 20px;
+            }
+            .stTabs [data-baseweb="tab-list"] {
+                gap: 16px;
+            }
+            button[kind="primary"], button[kind="secondary"] {
+                width: 100%;
+            }
+            [data-testid="stMetric"] {
+                min-height: 80px;
+            }
         }
         </style>
         """,
@@ -507,16 +784,19 @@ def render_copy_buttons(
         .copy-button {{
             width: 100%;
             height: 40px;
-            border: 0;
-            border-radius: 8px;
-            background: #111827;
-            color: #ffffff;
-            font-size: 15px;
+            border: 1px solid #d0d5dd;
+            border-radius: 10px;
+            background: #ffffff;
+            color: #344054;
+            font-size: 14px;
+            font-weight: 600;
             cursor: pointer;
             margin-bottom: 8px;
         }}
         .copy-button:hover {{
-            background: #1f2937;
+            border-color: #98a2b3;
+            background: #f9fafb;
+            color: #1f2937;
         }}
         </style>
         {buttons_html}
@@ -541,6 +821,110 @@ def render_copy_buttons(
         """,
         height=158,
     )
+
+
+def render_clipboard_button(
+    text: str,
+    element_id: str,
+    label: str,
+    success_label: str,
+) -> None:
+    payload = json.dumps(text, ensure_ascii=False)
+    components.html(
+        f"""
+        <button id="{element_id}" style="
+            width:100%;height:38px;border:1px solid #d0d5dd;border-radius:10px;
+            background:#fff;color:#344054;cursor:pointer;font-size:14px;font-weight:600;
+        ">{escape(label)}</button>
+        <script>
+        const button = document.getElementById("{element_id}");
+        button.addEventListener("click", async () => {{
+            await navigator.clipboard.writeText({payload});
+            button.textContent = {json.dumps(success_label, ensure_ascii=False)};
+        }});
+        </script>
+        """,
+        height=44,
+    )
+
+
+def render_line_review_mode(
+    items: list[LineReviewItem],
+    statuses: dict[str, str],
+) -> None:
+    total, handled, unhandled = get_line_review_progress(items, statuses)
+    total_col, handled_col, pending_col = st.columns(3)
+    total_col.metric("共发现", f"{total} 条")
+    handled_col.metric("已处理", f"{handled} 条")
+    pending_col.metric("暂未处理", f"{unhandled} 条")
+
+    if not items:
+        st.success("当前未发现需要逐条修改的问题。")
+        return
+
+    supplier_feedback = build_supplier_feedback(items)
+    render_clipboard_button(
+        supplier_feedback,
+        "copy-supplier-feedback",
+        "复制审核反馈",
+        "审核反馈已复制",
+    )
+
+    for index, item in enumerate(items, start=1):
+        status = statuses.get(item.item_id, "pending")
+        status_label = {
+            "handled": "已处理",
+            "deferred": "暂不处理",
+            "pending": "待处理",
+        }.get(status, "待处理")
+        with st.container(border=True):
+            header_left, header_right = st.columns([4, 1])
+            header_left.markdown(f"**问题 {index} · {escape(item.context)}**")
+            header_right.caption(status_label)
+            st.markdown(f"**原文片段：** {escape(item.original_text)}")
+            detail_left, detail_right = st.columns(2)
+            detail_left.write(f"风险类型：{item.category}")
+            detail_right.write(f"风险等级：{get_severity_label(item.severity)}")
+            st.write(f"修改原因：{item.reason}")
+            st.markdown(f"**推荐替换文本：** {escape(item.replacement_text)}")
+
+            copy_left, copy_right = st.columns(2)
+            with copy_left:
+                render_clipboard_button(
+                    item.replacement_text,
+                    f"copy-replacement-{item.item_id}",
+                    "复制替换文本",
+                    "替换文本已复制",
+                )
+            with copy_right:
+                feedback = (
+                    f"原句：{item.original_text}\n"
+                    f"建议修改为：{item.replacement_text}"
+                )
+                render_clipboard_button(
+                    feedback,
+                    f"copy-feedback-{item.item_id}",
+                    "复制“原句 → 建议”反馈",
+                    "单条反馈已复制",
+                )
+
+            action_left, action_right = st.columns(2)
+            if action_left.button(
+                "标记已处理",
+                key=f"line_review_handle_{item.item_id}",
+                use_container_width=True,
+                disabled=status == "handled",
+            ):
+                st.session_state["line_review_statuses"][item.item_id] = "handled"
+                st.rerun()
+            if action_right.button(
+                "暂不处理",
+                key=f"line_review_defer_{item.item_id}",
+                use_container_width=True,
+                disabled=status == "deferred",
+            ):
+                st.session_state["line_review_statuses"][item.item_id] = "deferred"
+                st.rerun()
 
 
 def build_rewrite_diff_html(text: str, findings: list[Finding], position: str) -> str:
@@ -733,7 +1117,7 @@ def render_title_copy_button(title: str, index: int, label: str = "复制标题"
     button_label = escape(label)
     components.html(
         f"""
-        <button id="copy-title-{index}" style="width:100%;height:34px;border:1px solid #e4e4e7;border-radius:8px;background:#fff;color:#3f3f46;cursor:pointer;">{button_label}</button>
+        <button id="copy-title-{index}" style="width:100%;height:38px;border:1px solid #d0d5dd;border-radius:10px;background:#fff;color:#344054;cursor:pointer;font-weight:600;">{button_label}</button>
         <script>
         document.getElementById("copy-title-{index}").addEventListener("click", async () => {{
             await navigator.clipboard.writeText({payload});
@@ -762,45 +1146,111 @@ def render_title_candidate_reviews(reviews: list[TitleCandidateReview]) -> None:
             render_title_copy_button(review.safe_title, index)
 
 
-def render_generated_note(note: dict, rules) -> None:
-    paragraphs = [line.strip() for line in note["body"].splitlines() if line.strip()]
-    opening = paragraphs[0] if paragraphs else ""
-    action = paragraphs[-1] if len(paragraphs) > 1 else ""
-    main_body = "\n".join(paragraphs[1:-1] if len(paragraphs) > 2 else paragraphs)
+def request_note_regeneration() -> None:
+    st.session_state["note_regenerate_requested"] = True
 
-    st.markdown("**标题**")
-    for index, title in enumerate(note["titles"], start=1):
-        st.write(f"{index}. {title}")
-    if opening:
-        st.markdown("**开头**")
-        st.write(opening)
-    st.markdown("**正文**")
-    st.text_area("生成的笔记正文", value=main_body or note["body"], height=240)
-    if action:
-        st.markdown("**行动引导**")
-        st.write(action)
 
-    note_findings = check_text(
-        title="\n".join(note["titles"]),
-        body=note["body"],
-        rules=rules,
+def render_generated_note(note: dict) -> None:
+    result_key = note.get("request_key", "generated")[:12]
+    title_result_tab, body_result_tab, audit_result_tab, publish_result_tab = st.tabs(
+        ["标题候选", "完整正文", "审核结果", "复制发布版"]
     )
-    safe_note = rewrite_with_local_rules("\n".join(note["titles"]), note["body"], note_findings)
-    if note_findings:
-        st.warning("生成内容命中当前审核规则，已提供安全版供参考。")
-        with st.expander("查看生成内容风险与安全版"):
-            st.dataframe(build_risk_detail_rows(note_findings), use_container_width=True, hide_index=True)
-            st.text_area("安全版正文", value=safe_note.body, height=220)
-    else:
-        st.success("生成内容已通过当前规则审核。")
-    st.markdown("**标签**")
-    st.write(" ".join(note["tags"]))
-    st.markdown("**封面文案**")
-    st.write(note["cover_copy"])
-    full_note = "\n".join([note["titles"][0] if note["titles"] else "", "", note["body"], "", " ".join(note["tags"])])
-    render_title_copy_button(full_note, 99, label="复制完整笔记")
-    if st.button("重新审核", use_container_width=True, key="note_recheck_button"):
-        st.success("已使用当前规则库重新审核生成内容。")
+
+    with title_result_tab:
+        if not note["titles"]:
+            st.warning("本次没有标题通过二次审核，请重新生成。")
+        for index, review in enumerate(note["title_reviews"], start=1):
+            with st.container(border=True):
+                st.caption(f"标题 {index}")
+                st.markdown(f"**{review['safe_title']}**")
+                st.write(f"审核状态：{'🟢 安全' if review['status'] == '安全' else '🔴 有风险'}")
+                if review["original_title"] != review["safe_title"]:
+                    st.caption(f"生成原稿：{review['original_title']}")
+                st.caption(f"修改说明：{review['change_note'] or '已通过当前规则审核。'}")
+                if review["status"] == "安全":
+                    render_title_copy_button(review["safe_title"], 200 + index)
+
+    with body_result_tab:
+        st.caption(f"正文共 {note['body_char_count']} 字，已按所选范围控制且不超过 1000 字。")
+        st.text_area(
+            "最终安全正文",
+            value=note["body"],
+            height=360,
+            disabled=True,
+            key=f"generated_note_body_{result_key}",
+        )
+        st.markdown("**行动引导**")
+        st.write(note["action"])
+        st.markdown("**建议标签**")
+        st.write(" ".join(note["tags"]))
+
+    with audit_result_tab:
+        if note["risk_items"]:
+            st.warning(f"初次审核命中 {len(note['risk_items'])} 项，已进行最小修改。")
+            risk_rows = [
+                {
+                    "位置": item["scope"],
+                    "风险词": item["term"],
+                    "风险等级": get_severity_label(item["severity"]),
+                    "分类": item["category"],
+                    "原因": item["reason"],
+                    "建议": item["suggestion"],
+                }
+                for item in note["risk_items"]
+            ]
+            st.dataframe(risk_rows, use_container_width=True, hide_index=True)
+        else:
+            st.success("生成原稿未命中当前规则风险项。")
+
+        st.markdown("**修改说明**")
+        if note["modifications"]:
+            for item in note["modifications"]:
+                st.write(f"- {item}")
+        else:
+            st.caption("无需规则替换。")
+
+        if note["passed_second_review"]:
+            st.success("标题、正文、行动引导和标签均已通过二次审核。")
+        else:
+            st.error("仍有内容未通过二次审核，仅建议使用标记为安全的结果。")
+
+    with publish_result_tab:
+        st.text_area(
+            "可复制发布版",
+            value=note["publish_text"],
+            height=420,
+            disabled=True,
+            key=f"generated_publish_text_{result_key}",
+        )
+        copy_title, copy_body, copy_all = st.columns(3)
+        with copy_title:
+            render_clipboard_button(
+                note["titles"][0] if note["titles"] else "",
+                f"copy-generated-title-{result_key}",
+                "复制标题",
+                "标题已复制",
+            )
+        with copy_body:
+            render_clipboard_button(
+                note["publish_body"],
+                f"copy-generated-body-{result_key}",
+                "复制正文",
+                "正文已复制",
+            )
+        with copy_all:
+            render_clipboard_button(
+                note["publish_text"],
+                f"copy-generated-all-{result_key}",
+                "复制完整发布版",
+                "发布版已复制",
+            )
+        st.button(
+            "重新生成",
+            type="primary",
+            use_container_width=True,
+            key="note_regenerate_button",
+            on_click=request_note_regeneration,
+        )
 
 
 def render_creator_profile_editor(profile: dict[str, str]) -> None:
@@ -863,31 +1313,82 @@ def render_creator_profile_editor(profile: dict[str, str]) -> None:
         st.rerun()
 
 
-def render_viral_note_analysis(analysis: dict) -> None:
-    st.metric("爆款评分", f"{analysis['score']}/100")
-    title_tab, opening_tab, structure_tab, method_tab = st.tabs(
-        ["标题结构", "开头钩子", "正文结构", "可复用方法"]
+def render_viral_note_analysis(
+    analysis: dict | None,
+    image_analysis: dict | None,
+) -> None:
+    if analysis:
+        st.metric("爆款评分", f"{analysis['score']}/100")
+    title_tab, opening_tab, structure_tab, image_tab, method_tab = st.tabs(
+        ["标题拆解", "开头钩子", "正文结构", "图片拆解", "可复用方法"]
     )
-    structure = analysis["structure_analysis"]
     with title_tab:
-        title_analysis = analysis["title_analysis"]
-        st.write(f"- 是否有痛点：{title_analysis['pain_point']}")
-        st.write(f"- 是否有目标人群：{title_analysis['target_audience']}")
-        st.write(f"- 是否有点击吸引力：{title_analysis['click_attraction']}")
+        if not analysis:
+            st.caption("尚未生成文字拆解。")
+        else:
+            title_analysis = analysis["title_analysis"]
+            st.write(f"- 是否有痛点：{title_analysis['pain_point']}")
+            st.write(f"- 是否有目标人群：{title_analysis['target_audience']}")
+            st.write(f"- 是否有点击吸引力：{title_analysis['click_attraction']}")
     with opening_tab:
-        st.write(structure["opening"])
+        if analysis:
+            st.write(analysis["structure_analysis"]["opening"])
+        else:
+            st.caption("尚未生成开头钩子分析。")
     with structure_tab:
-        st.write(f"- 中段：{structure['middle']}")
-        st.write(f"- 结尾：{structure['ending']}")
+        if analysis:
+            structure = analysis["structure_analysis"]
+            st.write(f"- 中段：{structure['middle']}")
+            st.write(f"- 结尾：{structure['ending']}")
+        else:
+            st.caption("尚未生成正文结构分析。")
+    with image_tab:
+        st.info(IMAGE_INFERENCE_NOTICE)
+        if not image_analysis:
+            st.caption("添加图片并开始拆解后，这里会展示基于 OCR 和基础图片信息的分析。")
+        else:
+            st.markdown("**吸引点**")
+            for item in image_analysis["attraction_points"]:
+                st.write(f"- {item}")
+            st.markdown("**版式结构（推断或建议）**")
+            layout = image_analysis["layout_structure"]
+            for key, label in (
+                ("headline_position", "主标题位置"),
+                ("text_hierarchy", "文字层级"),
+                ("information_density", "信息密度"),
+                ("visual_focus", "视觉焦点"),
+                ("element_relationship", "人物/文字/背景关系"),
+            ):
+                st.write(f"- {label}：{layout.get(key) or '现有信息不足'}")
+            st.markdown("**文案结构**")
+            copy_structure = image_analysis["copy_structure"]
+            for key, label in (
+                ("target_audience", "目标人群"),
+                ("pain_point", "痛点"),
+                ("credibility", "老师或课程背书"),
+                ("service_information", "价格、时长、1V1等服务信息"),
+            ):
+                st.write(f"- {label}：{copy_structure.get(key) or '现有文字未体现'}")
+            st.markdown("**风险点**")
+            for item in image_analysis["risk_points"] or ["未发现明确风险表达。"]:
+                st.write(f"- {item}")
+            st.markdown("**不建议照搬内容**")
+            for item in image_analysis["avoid_copying"] or ["暂无。"]:
+                st.write(f"- {item}")
     with method_tab:
-        st.markdown("**爆款原因**")
-        for index, reason in enumerate(analysis["viral_reasons"], start=1):
-            st.write(f"{index}. {reason}")
-        st.markdown("**可复制模板**")
-        st.text_area("可复制模板", value=analysis["copyable_template"], height=150, disabled=True)
-        st.markdown("**优化建议**")
-        for index, suggestion in enumerate(analysis["suggestions"], start=1):
-            st.write(f"{index}. {suggestion}")
+        if analysis:
+            st.markdown("**爆款原因**")
+            for index, reason in enumerate(analysis["viral_reasons"], start=1):
+                st.write(f"{index}. {reason}")
+            st.markdown("**可复制模板**")
+            st.text_area("可复制模板", value=analysis["copyable_template"], height=150, disabled=True)
+            st.markdown("**优化建议**")
+            for index, suggestion in enumerate(analysis["suggestions"], start=1):
+                st.write(f"{index}. {suggestion}")
+        if image_analysis:
+            st.markdown("**图片可复用元素**")
+            for item in image_analysis["reusable_elements"]:
+                st.write(f"- {item}")
 
 
 def render_pre_publish_report(report: dict) -> None:
@@ -924,15 +1425,10 @@ def render_pre_publish_report(report: dict) -> None:
 
 
 def render_rule_management() -> None:
-    st.markdown(
-        """
-        <div class="hero">
-            <h1>规则管理</h1>
-            <p>审核规则配置中心</p>
-            <div class="notice">新增、编辑或停用规则后，内容审核会在下一次运行时自动读取最新规则库。</div>
-        </div>
-        """,
-        unsafe_allow_html=True,
+    render_page_hero(
+        "规则管理",
+        "维护动态审核规则",
+        "新增、编辑或停用规则后，内容审核会在下一次运行时自动读取最新规则库。",
     )
 
     notice = st.session_state.pop("rule_manager_notice", "")
@@ -1085,7 +1581,7 @@ def render_rule_management() -> None:
                     f"我确认删除规则“{delete_term}”",
                     key=f"confirm_delete_{delete_term}",
                 )
-                if st.button("删除规则", type="primary", use_container_width=True):
+                if st.button("删除规则", use_container_width=True):
                     if not confirmed:
                         st.warning("请先确认删除操作。")
                     else:
@@ -1161,6 +1657,18 @@ def render_history_section() -> None:
             st.dataframe(risk_items, use_container_width=True, hide_index=True)
         else:
             st.success("未命中风险项。")
+
+        line_review_items = selected_record.get("line_review_items", [])
+        line_review_statuses = selected_record.get("line_review_statuses", {})
+        if line_review_items:
+            st.markdown("**逐条审校记录**")
+            for index, item in enumerate(line_review_items, start=1):
+                status = line_review_statuses.get(item.get("item_id", ""), "pending")
+                status_label = "已处理" if status == "handled" else "暂未处理"
+                with st.expander(f"问题 {index} · {status_label}"):
+                    st.write(f"原句：{item.get('original_text', '')}")
+                    st.write(f"修改原因：{item.get('reason', '')}")
+                    st.write(f"建议修改为：{item.get('replacement_text', '')}")
 
         st.markdown("**AI安全版**")
         st.write(f"标题：{selected_record.get('safe_title', '')}")
@@ -1245,7 +1753,10 @@ def ensure_cover_ocr(image_bytes: bytes) -> tuple[list[str], str]:
 
 
 def get_current_image_bytes() -> bytes:
-    return st.session_state.get("uploaded_image_data", b"")
+    return st.session_state.get(
+        "current_image_bytes",
+        st.session_state.get("uploaded_image_data", b""),
+    )
 
 
 def analyze_cover_text(
@@ -1292,23 +1803,75 @@ def auto_analyze_cover_once(image_bytes: bytes, rules: list[Rule]) -> None:
         analyze_cover_text(image_bytes, cover_text, rules, source="automatic")
 
 
+def process_image_input(image: object, source: str, rules: list[Rule]) -> bool:
+    try:
+        payload = normalize_image_input(image, source)
+    except ImageInputError as error:
+        st.session_state["image_input_error"] = str(error)
+        return False
+
+    seen_key = f"last_seen_{source}_hash"
+    if st.session_state.get(seen_key) == payload.image_hash:
+        return False
+
+    st.session_state[seen_key] = payload.image_hash
+    st.session_state.pop("image_input_error", None)
+    is_new_image = store_image_payload(st.session_state, payload)
+    if is_new_image:
+        ensure_cover_ocr(payload.image_bytes)
+        auto_analyze_cover_once(payload.image_bytes, rules)
+    return is_new_image
+
+
 def render_cover_diagnosis_page(rules: list[Rule]) -> None:
     render_page_hero(
         "封面诊断",
         "上传封面并分析文字与点击吸引力",
         "上传图片后会自动尝试识别文字；识别失败时仍可手动补充并继续分析。",
     )
-    uploaded_image = st.file_uploader(
-        "上传封面图片",
-        type=["png", "jpg", "jpeg", "webp"],
-        key=f"cover_page_upload_{st.session_state['uploader_key']}",
-    )
-    if uploaded_image:
-        st.session_state["uploaded_image_data"] = uploaded_image.getvalue()
+    upload_tab, clipboard_tab = st.tabs(["上传图片", "粘贴图片"])
+    with upload_tab:
+        uploaded_image = st.file_uploader(
+            "上传封面图片",
+            type=["png", "jpg", "jpeg", "webp"],
+            key=f"cover_page_upload_{st.session_state['uploader_key']}",
+        )
+        if uploaded_image:
+            process_image_input(uploaded_image, "upload", rules)
+
+    with clipboard_tab:
+        st.markdown("**请先复制图片，然后点击此区域并按 Command/Ctrl + V。**")
+        paste_button, component_error = load_paste_image_button()
+        if paste_button is None:
+            st.warning(component_error)
+        else:
+            try:
+                paste_result = paste_button(
+                    label="粘贴剪贴板图片",
+                    key=f"cover_clipboard_paste_{st.session_state['uploader_key']}",
+                    text_color="#ffffff",
+                    background_color="#ef4f5f",
+                    hover_background_color="#dc3f50",
+                    errors="ignore",
+                )
+                pasted_image, paste_message = extract_pasted_image(paste_result)
+                if pasted_image is not None:
+                    process_image_input(pasted_image, "clipboard", rules)
+                    if not st.session_state.get("image_input_error"):
+                        st.success("图片已粘贴，可继续识别和分析。")
+                else:
+                    st.caption(paste_message)
+            except Exception:
+                st.warning("粘贴图片组件暂时无法加载，请继续使用文件上传。")
+        st.caption("系统仅处理你主动粘贴的图片，不读取剪贴板中的其他内容。")
+
+    image_input_error = st.session_state.get("image_input_error", "")
+    if image_input_error:
+        st.warning(image_input_error)
 
     image_bytes = get_current_image_bytes()
     if not image_bytes:
-        st.info("先在这里上传封面，或从创作工作台带入已上传的封面。")
+        st.info("先上传或粘贴封面，也可以从创作工作台带入已上传的封面。")
         return
 
     ocr_lines, ocr_error = ensure_cover_ocr(image_bytes)
@@ -1378,24 +1941,166 @@ def render_cover_diagnosis_page(rules: list[Rule]) -> None:
             st.write(analysis["recommended_copy"])
 
 
-def render_viral_workspace() -> None:
+def clear_viral_import_state() -> None:
+    for key in (
+        "imported_link_content",
+        "link_import_error",
+        "viral_original_url",
+        "viral_final_url",
+        "viral_link_status",
+        "viral_extracted_title",
+        "viral_extracted_body",
+        "viral_extracted_images",
+        "viral_selected_image_url",
+        "viral_note_analysis",
+        "viral_note_analysis_error",
+        "viral_text_analysis_key",
+        "viral_image_analysis",
+        "viral_image_analysis_error",
+        "viral_image_analysis_key",
+    ):
+        st.session_state.pop(key, None)
+    if st.session_state.get("viral_image_source") == "link":
+        for key in (
+            "viral_image_source",
+            "viral_image_bytes",
+            "viral_image_hash",
+            "viral_image_preview",
+            "viral_image_format",
+            "viral_image_width",
+            "viral_image_height",
+            "viral_image_ocr_lines",
+            "viral_image_ocr_error",
+            "viral_image_text",
+            "viral_image_description",
+        ):
+            st.session_state.pop(key, None)
+
+
+def process_viral_image_input(image: object, source: str) -> bool:
+    normalize_source = source if source in {"upload", "clipboard"} else "upload"
+    try:
+        payload = normalize_image_input(image, normalize_source)
+    except ImageInputError as error:
+        st.session_state["viral_image_input_error"] = str(error)
+        return False
+
+    seen_key = f"viral_last_seen_{source}_hash"
+    if st.session_state.get(seen_key) == payload.image_hash:
+        return False
+    st.session_state[seen_key] = payload.image_hash
+    st.session_state.pop("viral_image_input_error", None)
+    is_new_image = store_viral_image_payload(st.session_state, payload)
+    st.session_state["viral_image_source"] = source
+    if not is_new_image:
+        return False
+
+    ocr_lines, ocr_error = extract_text_with_status(payload.image_bytes)
+    st.session_state["viral_image_ocr_lines"] = ocr_lines
+    st.session_state["viral_image_ocr_error"] = ocr_error
+    st.session_state["viral_image_text"] = "\n".join(ocr_lines)
+    return True
+
+
+def render_viral_image_input_controls(prefix: str) -> None:
+    upload_column, paste_column = st.columns(2)
+    with upload_column:
+        uploaded_image = st.file_uploader(
+            "上传拆解图片",
+            type=["png", "jpg", "jpeg", "webp"],
+            key=f"{prefix}_viral_image_upload",
+        )
+        if uploaded_image:
+            process_viral_image_input(uploaded_image, "upload")
+    with paste_column:
+        paste_button, component_error = load_paste_image_button()
+        if paste_button is None:
+            st.caption(component_error)
+        else:
+            try:
+                paste_result = paste_button(
+                    label="粘贴拆解图片",
+                    key=f"{prefix}_viral_image_paste",
+                    text_color="#ffffff",
+                    background_color="#ef4f5f",
+                    hover_background_color="#dc3f50",
+                    errors="ignore",
+                )
+                pasted_image, paste_message = extract_pasted_image(paste_result)
+                if pasted_image is not None:
+                    process_viral_image_input(pasted_image, "clipboard")
+                else:
+                    st.caption(paste_message)
+            except Exception:
+                st.caption("粘贴图片组件暂不可用，请继续使用文件上传。")
+        st.caption("仅处理你主动粘贴的图片，不读取剪贴板文本。")
+
+
+def run_viral_analysis(title: str, body: str, rules: list[Rule]) -> None:
+    normalized_title = title.strip()
+    normalized_body = body.strip()
+    if can_analyze_viral_input(normalized_title, normalized_body):
+        text_key = hashlib.sha256(
+            f"{normalized_title}\n{normalized_body}".encode("utf-8")
+        ).hexdigest()
+        if st.session_state.get("viral_text_analysis_key") != text_key:
+            analysis = analyze_viral_note(normalized_title, normalized_body)
+            st.session_state["viral_note_analysis"] = analysis
+            st.session_state["viral_note_analysis_error"] = "" if analysis else get_last_error()
+            if analysis:
+                st.session_state["viral_text_analysis_key"] = text_key
+
+    image_bytes = st.session_state.get("viral_image_bytes", b"")
+    if image_bytes:
+        image_text = st.session_state.get("viral_image_text", "")
+        image_review = review_image(image_text, rules)
+        image_context = build_viral_image_context(
+            st.session_state,
+            risk_items=image_review["risk_items"],
+        )
+        image_key = hashlib.sha256(
+            json.dumps(image_context, ensure_ascii=False, sort_keys=True).encode("utf-8")
+        ).hexdigest()
+        if st.session_state.get("viral_image_analysis_key") != image_key:
+            image_analysis = analyze_viral_image(image_context)
+            st.session_state["viral_image_analysis"] = image_analysis
+            st.session_state["viral_image_analysis_error"] = "" if image_analysis else get_last_error()
+            if image_analysis:
+                st.session_state["viral_image_analysis_key"] = image_key
+
+
+def render_viral_workspace(rules: list[Rule]) -> None:
     render_page_hero(
         "爆款拆解",
-        "通过链接或手动内容分析优秀笔记",
-        "只读取公开网页可访问的信息；遇到登录、验证码或访问限制时可直接切换到手动输入。",
+        "通过公开链接或手动图文素材分析优秀笔记",
+        "公开内容会尽量读取；遇到登录、动态加载、验证码或访问限制时，可立即切换手动输入。",
     )
-    pending_import = st.session_state.pop("pending_viral_import", None)
-    if pending_import:
-        st.session_state["viral_note_title"] = pending_import.get("title", "")
-        st.session_state["viral_note_body"] = pending_import.get("body", "")
 
+    analysis_requested = False
     link_tab, manual_tab = st.tabs(["粘贴链接", "手动输入"])
     with link_tab:
-        import_url = st.text_input("公开网页链接", placeholder="粘贴可公开访问的网页链接", key="viral_import_url")
+        import_url = st.text_input(
+            "公开网页链接",
+            placeholder="支持短分享链接、完整笔记链接和带查询参数的公开链接",
+            key="viral_import_url",
+        )
         if st.button("读取链接内容", type="primary", use_container_width=True, key="link_import_button"):
+            normalized_url = import_url.strip()
+            if normalized_url != st.session_state.get("viral_last_import_url", ""):
+                clear_viral_import_state()
+                st.session_state["viral_last_import_url"] = normalized_url
             try:
-                st.session_state["imported_link_content"] = import_public_page(import_url)
+                imported = import_public_page(normalized_url)
+                st.session_state["imported_link_content"] = imported
                 st.session_state["link_import_error"] = ""
+                st.session_state["viral_original_url"] = imported["original_url"]
+                st.session_state["viral_final_url"] = imported["final_url"]
+                st.session_state["viral_link_status"] = imported["status"]
+                st.session_state["viral_extracted_title"] = imported["title"]
+                st.session_state["viral_extracted_body"] = imported["body"]
+                st.session_state["viral_extracted_images"] = imported["image_urls"]
+                st.session_state["viral_import_title_edit"] = imported["title"]
+                st.session_state["viral_import_body_edit"] = imported["body"]
             except LinkImportError as error:
                 st.session_state["imported_link_content"] = None
                 st.session_state["link_import_error"] = str(error)
@@ -1403,34 +2108,113 @@ def render_viral_workspace() -> None:
         imported_content = st.session_state.get("imported_link_content")
         import_error = st.session_state.get("link_import_error", "")
         if imported_content:
-            st.success("已读取公开页面信息，请确认后开始拆解。")
-            st.caption(imported_content["source_url"])
-            st.text_input("导入标题预览", value=imported_content.get("title", ""), disabled=True)
-            st.text_area("导入正文预览", value=imported_content.get("body", ""), height=180, disabled=True)
-            if st.button("使用导入内容开始拆解", use_container_width=True, key="use_imported_content_button"):
-                st.session_state["pending_viral_import"] = imported_content
-                st.rerun()
+            if imported_content["status"] == "success":
+                st.success(imported_content["status_message"])
+            else:
+                st.warning(imported_content["status_message"])
+            preview_one, preview_two = st.columns(2)
+            preview_one.write(f"原始链接：{imported_content['original_url']}")
+            preview_one.write(f"最终链接：{imported_content['final_url']}")
+            preview_two.write(f"导入状态：{imported_content['status']}")
+            preview_two.write(f"已提取图片：{len(imported_content['image_urls'])} 张")
+            st.caption(f"页面描述：{imported_content.get('description') or '未提取到'}")
+            imported_title = st.text_input("导入标题", key="viral_import_title_edit")
+            imported_body = st.text_area("导入正文", height=180, key="viral_import_body_edit")
+            st.caption(f"正文摘要：{(imported_body[:180] + '…') if len(imported_body) > 180 else (imported_body or '待手动补充')}")
+
+            selected_image_url = ""
+            image_urls = imported_content["image_urls"]
+            if image_urls:
+                selected_index = st.selectbox(
+                    "选择一张公开图片作为主图",
+                    range(len(image_urls)),
+                    format_func=lambda index: f"图片 {index + 1}",
+                    key="viral_selected_image_index",
+                )
+                selected_image_url = image_urls[selected_index]
+                st.caption(selected_image_url)
+                st.session_state["viral_selected_image_url"] = selected_image_url
+            render_viral_image_input_controls("link")
+
+            if st.button(
+                "确认导入并开始拆解",
+                type="primary",
+                use_container_width=True,
+                key="confirm_viral_import_button",
+            ):
+                st.session_state["viral_note_title"] = imported_title
+                st.session_state["viral_note_body"] = imported_body
+                if selected_image_url:
+                    try:
+                        process_viral_image_input(
+                            download_public_image(selected_image_url),
+                            "link",
+                        )
+                    except LinkImportError as error:
+                        st.session_state["viral_image_input_error"] = (
+                            f"公开图片暂时无法读取：{error} 可继续上传或粘贴图片。"
+                        )
+                analysis_requested = True
         elif import_error:
-            st.warning("该链接暂时无法自动读取，可能需要登录或页面限制访问。请切换到手动输入模式。")
-            st.caption(import_error)
+            st.warning(import_error)
+            st.info("链接暂时无法自动读取，你仍可以手动粘贴标题、正文和图片继续拆解。")
+            render_viral_image_input_controls("link")
+        else:
+            st.caption("读取公开链接后可确认标题、正文和候选图片；也可以先手动添加图片。")
+            render_viral_image_input_controls("link")
 
     with manual_tab:
         viral_title = st.text_input("拆解标题", placeholder="粘贴爆款笔记标题", key="viral_note_title")
-        viral_body = st.text_area("拆解正文", placeholder="粘贴爆款笔记正文", height=180, key="viral_note_body")
+        viral_body = st.text_area(
+            "拆解正文",
+            placeholder="粘贴爆款笔记正文",
+            height=180,
+            key="viral_note_body",
+        )
+        render_viral_image_input_controls("manual")
         if st.button("开始爆款拆解", type="primary", use_container_width=True, key="viral_analysis_button"):
-            if not viral_title.strip() and not viral_body.strip():
-                st.warning("请先粘贴需要拆解的标题或正文。")
-            else:
-                with st.spinner("正在进行爆款笔记拆解..."):
-                    viral_analysis = analyze_viral_note(viral_title.strip(), viral_body.strip())
-                st.session_state["viral_note_analysis"] = viral_analysis
-                st.session_state["viral_note_analysis_error"] = "" if viral_analysis else get_last_error()
-        viral_analysis = st.session_state.get("viral_note_analysis")
-        viral_analysis_error = st.session_state.get("viral_note_analysis_error", "")
-        if viral_analysis:
-            render_viral_note_analysis(viral_analysis)
-        elif viral_analysis_error:
-            st.warning(f"爆款拆解失败：{viral_analysis_error}")
+            analysis_requested = True
+
+    image_input_error = st.session_state.get("viral_image_input_error", "")
+    if image_input_error:
+        st.warning(image_input_error)
+    image_bytes = st.session_state.get("viral_image_bytes", b"")
+    if image_bytes:
+        st.image(image_bytes, caption="当前拆解主图", use_container_width=True)
+        ocr_error = st.session_state.get("viral_image_ocr_error", "")
+        if ocr_error:
+            st.caption(f"OCR：{ocr_error} 可在下方手动补充图片文字。")
+        st.text_area(
+            "图片 OCR 文字（可编辑）",
+            key="viral_image_text",
+            height=130,
+            placeholder="OCR失败时可手动输入图片中的文字",
+        )
+        st.text_area(
+            "图片补充描述（可选）",
+            key="viral_image_description",
+            height=90,
+            placeholder="只填写你能确认的画面信息，例如人物、背景或排版重点",
+        )
+        st.info(IMAGE_INFERENCE_NOTICE)
+
+    if analysis_requested:
+        if not can_analyze_viral_input(viral_title, viral_body) and not image_bytes:
+            st.warning("请先提供标题、正文或图片。")
+        else:
+            with st.spinner("正在拆解文字结构与图片信息..."):
+                run_viral_analysis(viral_title, viral_body, rules)
+
+    viral_analysis = st.session_state.get("viral_note_analysis")
+    image_analysis = st.session_state.get("viral_image_analysis")
+    text_error = st.session_state.get("viral_note_analysis_error", "")
+    image_error = st.session_state.get("viral_image_analysis_error", "")
+    if viral_analysis or image_analysis:
+        render_viral_note_analysis(viral_analysis, image_analysis)
+    if text_error:
+        st.warning(f"文字拆解暂时不可用：{text_error}")
+    if image_error:
+        st.warning(f"图片拆解暂时不可用：{image_error}")
 
 
 def render_creator_profile_page(profile: dict[str, str]) -> None:
@@ -1447,7 +2231,7 @@ def render_creator_profile_page(profile: dict[str, str]) -> None:
 
 def main() -> None:
     st.set_page_config(
-        page_title="AI Reviewer",
+        page_title="NoteGuard AI",
         page_icon=":material/rate_review:",
         layout="wide",
     )
@@ -1472,24 +2256,33 @@ def main() -> None:
         "规则管理": "维护动态审核规则",
         "创作者资料": "管理个人身份、服务和内容风格",
     }
+    navigation_icons = {
+        "创作工作台": "⌂",
+        "封面诊断": "▧",
+        "爆款拆解": "◇",
+        "历史记录": "◷",
+        "规则管理": "⚙",
+        "创作者资料": "◎",
+    }
     with st.sidebar:
-        st.markdown("## AI Reviewer")
+        st.markdown("## NoteGuard AI")
         st.caption("教育内容运营助手")
         workspace_page = st.radio(
             "导航",
             list(navigation_descriptions),
+            format_func=lambda page: f"{navigation_icons[page]}  {page}",
             label_visibility="collapsed",
         )
         st.markdown(
             f'<div class="sidebar-note">{escape(navigation_descriptions[workspace_page])}</div>',
             unsafe_allow_html=True,
         )
-        st.caption("功能说明")
-        for item, description in navigation_descriptions.items():
-            st.markdown(
-                f'<div class="sidebar-note"><strong>{escape(item)}</strong>：{escape(description)}</div>',
-                unsafe_allow_html=True,
-            )
+        with st.expander("查看功能说明", expanded=False):
+            for item, description in navigation_descriptions.items():
+                st.markdown(
+                    f'<div class="sidebar-note"><strong>{escape(item)}</strong><br>{escape(description)}</div>',
+                    unsafe_allow_html=True,
+                )
 
     rules = get_rules()
     creator_profile = load_creator_profile(CREATOR_PROFILE_PATH)
@@ -1500,7 +2293,7 @@ def main() -> None:
         render_cover_diagnosis_page(rules)
         return
     if workspace_page == "爆款拆解":
-        render_viral_workspace()
+        render_viral_workspace(rules)
         return
     if workspace_page == "历史记录":
         render_page_hero("历史记录", "查看过去的审核与生成结果", "最近 10 条记录保存在本地，可按已有结果类型筛选和展开查看。")
@@ -1511,9 +2304,9 @@ def main() -> None:
         return
 
     render_page_hero(
-        "AI Reviewer",
-        "小红书教育内容智能优化助手",
-        "输入标题和正文，完成风险检测、内容改写和发布前检查。",
+        "NoteGuard AI",
+        "教育内容智能审核与优化助手",
+        "帮助教育创作者检测内容风险、优化表达，并完成发布前检查。",
     )
     st.markdown(
         '<div class="step-indicator"><span class="active">① 准备内容</span><span>② 内容诊断</span><span>③ AI优化</span><span>④ 发布检查</span></div>',
@@ -1571,10 +2364,7 @@ def main() -> None:
                 key=f"image_upload_{st.session_state['uploader_key']}",
             )
             if uploaded_image:
-                image_bytes = uploaded_image.getvalue()
-                st.session_state["uploaded_image_data"] = image_bytes
-                ensure_cover_ocr(image_bytes)
-                auto_analyze_cover_once(image_bytes, rules)
+                process_image_input(uploaded_image, "upload", rules)
             active_image_bytes = get_current_image_bytes()
             if active_image_bytes:
                 st.image(active_image_bytes, caption="封面已添加，可在“封面诊断”继续处理", use_container_width=True)
@@ -1667,6 +2457,13 @@ def main() -> None:
         highlighted_title = build_highlighted_text(title, findings, "标题")
         highlighted_body = build_highlighted_text(body, findings, "正文")
         risk_detail_rows = build_risk_detail_rows(findings)
+        line_review_items = build_line_review_items(title, body, findings)
+        if st.session_state.get("line_review_key") != rewrite_key:
+            st.session_state["line_review_key"] = rewrite_key
+            st.session_state["line_review_statuses"] = {
+                item.item_id: "pending" for item in line_review_items
+            }
+        line_review_statuses = st.session_state.get("line_review_statuses", {})
 
         cover_analysis = None
         cover_analysis_error = ""
@@ -1694,6 +2491,8 @@ def main() -> None:
                 image_ocr_text="\n".join(cover_ocr_lines),
                 title_candidates=title_candidates,
                 cover_analysis=cover_analysis,
+                line_review_items=[asdict(item) for item in line_review_items],
+                line_review_statuses=line_review_statuses,
             )
         )
         image_review = review_image(image_text if has_image else "", rules)
@@ -1745,36 +2544,48 @@ def main() -> None:
     with st.container(border=True):
         st.markdown('<div class="module-eyebrow">③ AI优化</div>', unsafe_allow_html=True)
         st.markdown('<div class="module-title">让内容更适合发布</div>', unsafe_allow_html=True)
-        rewrite_tab, title_tab, note_tab = st.tabs(["安全改写", "标题生成", "完整笔记"])
+        rewrite_tab, title_tab, note_tab = st.tabs(["安全改写", "标题生成", "图文文案生成"])
         with rewrite_tab:
             if not has_review:
                 st.info("完成审核后，可在这里生成安全版文案。")
             else:
-                rewrite_label = "重新生成安全版" if st.session_state.get("safe_rewrite_key") == rewrite_key else "一键生成安全版"
-                if st.button(rewrite_label, type="primary", use_container_width=True, key="safe_rewrite_button"):
-                    with st.spinner("正在生成安全版文案..."):
-                        st.session_state["safe_rewrite_result"] = rewrite_all(
-                            title,
-                            body,
-                            findings,
-                            creator_profile=creator_profile,
-                        )
-                        st.session_state["safe_rewrite_key"] = rewrite_key
-                    st.rerun()
-                st.caption(
-                    build_rewrite_status_note(
-                        findings,
-                        source=rewrite_result.source,
-                        error=rewrite_result.error,
+                line_mode_tab, full_mode_tab = st.tabs(["逐条审校", "完整安全版"])
+                with line_mode_tab:
+                    st.caption("逐条确认风险位置和最小修改建议；系统不会操作或覆盖供应商原文。")
+                    render_line_review_mode(
+                        line_review_items,
+                        line_review_statuses,
                     )
-                )
-                st.text_input("改写后标题", value=rewritten_title, key="rewritten_title_display")
-                st.text_area("改写后正文", value=rewritten_body, height=170, key="rewritten_body_display")
-                if rewrite_result.reason:
-                    st.write(f"修改原因：{rewrite_result.reason}")
-                with st.expander("查看修改记录"):
-                    render_rewrite_changes(title, body, findings, title_changes, body_changes)
-                render_copy_buttons(rewritten_title, rewritten_body, rewrite_result.reason)
+
+                with full_mode_tab:
+                    st.info("完整安全版仅供参考，建议结合逐条审校结果确认后使用。")
+                    rewrite_label = "重新生成安全版" if st.session_state.get("safe_rewrite_key") == rewrite_key else "一键生成安全版"
+                    if st.button(rewrite_label, type="primary", use_container_width=True, key="safe_rewrite_button"):
+                        with st.spinner("正在生成安全版文案..."):
+                            st.session_state["safe_rewrite_result"] = rewrite_all(
+                                title,
+                                body,
+                                findings,
+                                creator_profile=creator_profile,
+                            )
+                            st.session_state["safe_rewrite_key"] = rewrite_key
+                        st.rerun()
+                    st.caption(
+                        build_rewrite_status_note(
+                            findings,
+                            source=rewrite_result.source,
+                            error=rewrite_result.error,
+                        )
+                    )
+                    st.text_input("改写后标题", value=rewritten_title, key="rewritten_title_display")
+                    st.text_area("改写后正文", value=rewritten_body, height=170, key="rewritten_body_display")
+                    with st.expander("查看修改原因与记录"):
+                        if rewrite_result.reason:
+                            st.markdown("**修改原因**")
+                            st.write(rewrite_result.reason)
+                            st.divider()
+                        render_rewrite_changes(title, body, findings, title_changes, body_changes)
+                    render_copy_buttons(rewritten_title, rewritten_body, rewrite_result.reason)
 
         with title_tab:
             if not has_review:
@@ -1805,61 +2616,136 @@ def main() -> None:
         with note_tab:
             if "note_generation_topic" not in st.session_state:
                 st.session_state["note_generation_topic"] = st.session_state.get("draft_title", "")
+            st.caption("根据当前标题、正文、封面文字和创作者资料，生成适合发布的标题与完整文案。")
             topic = st.text_input(
                 "主题/关键词（可选）",
-                placeholder="默认使用当前标题，也可补充一个更具体的主题",
+                placeholder="可补充一个更具体的主题；留空时自动使用当前素材",
                 key="note_generation_topic",
             )
-            with st.expander("生成设置（可选）"):
-                content_goal = st.selectbox(
-                    "内容目的",
-                    ["干货分享", "建立信任", "服务介绍", "家长共鸣"],
-                    key="note_content_goal",
+            option_left, option_right = st.columns(2)
+            with option_left:
+                content_direction = st.selectbox(
+                    "内容方向",
+                    CONTENT_DIRECTIONS,
+                    key="note_content_direction",
                 )
-                writing_intensity = st.selectbox(
-                    "文案强度",
-                    ["克制", "自然", "有转化力"],
+                length_range = st.selectbox(
+                    "字数范围",
+                    list(LENGTH_RANGES),
                     index=1,
-                    key="note_writing_intensity",
+                    key="note_length_range",
                 )
-                include_intro = st.checkbox("加入个人介绍", key="note_include_intro")
-                include_service = st.checkbox("加入服务信息", key="note_include_service")
-                include_action = st.checkbox("加入行动引导", key="note_include_action")
-                target_length = st.number_input(
-                    "目标字数",
-                    min_value=300,
-                    max_value=1500,
-                    value=700,
-                    step=100,
-                    key="note_target_length",
+                include_intro = st.checkbox("加入老师介绍", key="note_include_intro")
+                include_service = st.checkbox("加入课程信息", key="note_include_service")
+            with option_right:
+                include_action = st.checkbox(
+                    "加入行动引导",
+                    value=True,
+                    key="note_include_action",
                 )
-            if st.button("生成完整小红书笔记", type="primary", use_container_width=True, key="note_generation_button"):
-                note_topic = topic.strip() or title.strip()
-                if not note_topic:
-                    st.warning("请先输入主题或关键词。")
+                include_tags = st.checkbox(
+                    "加入标签",
+                    value=True,
+                    key="note_include_tags",
+                )
+                image_bytes = get_current_image_bytes()
+                ocr_text = "\n".join(st.session_state.get("cover_ocr_lines", []))
+                corrected_cover_text = st.session_state.get("draft_image_text", "").strip()
+                available_materials = [
+                    label
+                    for label, available in (
+                        ("当前标题", bool(title.strip())),
+                        ("当前正文", bool(body.strip())),
+                        ("封面图片", bool(image_bytes)),
+                        ("OCR文字", bool(ocr_text.strip())),
+                        ("修正封面文字", bool(corrected_cover_text)),
+                        ("创作者资料", any(value.strip() for value in creator_profile.values())),
+                    )
+                    if available
+                ]
+                st.caption(
+                    "已读取：" + ("、".join(available_materials) if available_materials else "等待补充素材")
+                )
+
+            generate_requested = st.button(
+                "生成标题和文案",
+                type="primary",
+                use_container_width=True,
+                key="note_generation_button",
+            )
+            regenerate_requested = st.session_state.pop("note_regenerate_requested", False)
+            if generate_requested or regenerate_requested:
+                note_topic = topic.strip() or title.strip() or corrected_cover_text
+                if not any((note_topic, body.strip(), ocr_text.strip())):
+                    st.warning("请先补充标题、正文、封面文字或主题关键词。")
                 else:
+                    min_chars, max_chars = LENGTH_RANGES[length_range]
+                    source_materials = {
+                        "current_title": title.strip(),
+                        "current_body": body.strip(),
+                        "has_cover_image": bool(image_bytes),
+                        "cover_image_hash": hashlib.sha256(image_bytes).hexdigest() if image_bytes else "",
+                        "ocr_text": ocr_text.strip(),
+                        "corrected_cover_text": corrected_cover_text,
+                    }
+                    structure_seed = "|".join(
+                        [note_topic, title.strip(), body.strip()[:160], corrected_cover_text]
+                    )
                     generation_options = {
-                        "content_goal": content_goal,
-                        "writing_intensity": writing_intensity,
+                        "content_direction": content_direction,
+                        "length_range": length_range,
+                        "min_chars": min_chars,
+                        "max_chars": max_chars,
                         "include_intro": include_intro,
                         "include_service": include_service,
                         "include_action": include_action,
-                        "target_length": target_length,
+                        "include_tags": include_tags,
+                        "structure_guidance": get_structure_guidance(
+                            content_direction,
+                            structure_seed,
+                        ),
                     }
-                    with st.spinner("正在生成小红书笔记..."):
-                        note_result = generate_xiaohongshu_note(
+                    request_payload = {
+                        "topic": note_topic,
+                        "source_materials": source_materials,
+                        "creator_profile": creator_profile,
+                        "generation_options": generation_options,
+                        "risk_terms": [item.term for item in findings],
+                    }
+                    request_key = build_generation_request_key(request_payload)
+                    with st.spinner("正在根据当前图文素材生成标题和文案..."):
+                        raw_note = generate_xiaohongshu_note(
                             note_topic,
                             creator_profile=creator_profile,
                             generation_options=generation_options,
+                            source_materials=source_materials,
+                            risk_items=findings,
                         )
+                        note_result = (
+                            finalize_generated_note(
+                                raw_note,
+                                rules,
+                                max_body_chars=max_chars,
+                                include_action=include_action,
+                                include_tags=include_tags,
+                            )
+                            if raw_note
+                            else None
+                        )
+                    if note_result:
+                        note_result["request_key"] = request_key
+                        st.session_state["note_generation_key"] = request_key
                     st.session_state["note_generation_result"] = note_result
                     st.session_state["note_generation_error"] = "" if note_result else get_last_error()
             generated_note = st.session_state.get("note_generation_result")
             note_generation_error = st.session_state.get("note_generation_error", "")
-            if generated_note:
-                render_generated_note(generated_note, rules)
+            if generated_note and "action" in generated_note:
+                render_generated_note(generated_note)
+            elif generated_note:
+                st.session_state.pop("note_generation_result", None)
+                st.info("图文文案生成已升级，请点击“生成标题和文案”创建新版本。")
             elif note_generation_error:
-                st.warning(f"笔记生成失败：{note_generation_error}")
+                st.warning(f"图文文案生成失败：{note_generation_error}")
 
     with st.container(border=True):
         st.markdown('<div class="module-eyebrow">④ 发布检查</div>', unsafe_allow_html=True)

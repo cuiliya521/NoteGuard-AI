@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import re
 from dataclasses import dataclass
 
@@ -33,15 +34,30 @@ class TitleCandidateReview:
     change_note: str
 
 
+@dataclass(frozen=True)
+class LineReviewItem:
+    item_id: str
+    original_text: str
+    context: str
+    position: str
+    category: str
+    severity: str
+    reason: str
+    replacement_text: str
+
+
 PHRASE_REPLACEMENTS = {
     "数学思维": "数理思维",
 }
 
 
-def clean_rewritten_text(text: str) -> str:
+def clean_rewritten_text(text: str, preserve_layout: bool = False) -> str:
     """Remove obvious artifacts introduced by local term replacements."""
-    cleaned = re.sub(r"\s+", " ", text or "").strip()
-    cleaned = re.sub(r"(?<=[\u4e00-\u9fff])\s+(?=[\u4e00-\u9fff])", "", cleaned)
+    cleaned = re.sub(r"[\t\f\v ]+", " ", text or "").strip()
+    cleaned = re.sub(r"(?<=[\u4e00-\u9fff])[\t ]+(?=[\u4e00-\u9fff])", "", cleaned)
+
+    if preserve_layout:
+        return cleaned
 
     # Collapse adjacent repeated Chinese words or short phrases, for example 思维思维.
     while True:
@@ -52,6 +68,129 @@ def clean_rewritten_text(text: str) -> str:
 
     cleaned = re.sub(r"([，。！？、；：,!.?;:])\1+", r"\1", cleaned)
     return cleaned
+
+
+def _find_context_span(text: str, start: int, end: int) -> tuple[int, int]:
+    boundaries = "\n。！？!?；;"
+    left = max((text.rfind(char, 0, start) for char in boundaries), default=-1) + 1
+    right_candidates = [
+        index + 1
+        for char in boundaries
+        if (index := text.find(char, end)) != -1
+    ]
+    right = min(right_candidates, default=len(text))
+
+    while left < right and text[left].isspace():
+        left += 1
+    while right > left and text[right - 1].isspace():
+        right -= 1
+    return left, right
+
+
+def _build_minimal_replacement(
+    context_text: str,
+    finding: Finding,
+    context_start: int,
+) -> str:
+    relative_start = finding.start - context_start
+    relative_end = finding.end - context_start
+    replacement = finding.suggestion or ""
+
+    for phrase, phrase_replacement in sorted(
+        PHRASE_REPLACEMENTS.items(),
+        key=lambda item: len(item[0]),
+        reverse=True,
+    ):
+        term_offset = phrase.find(finding.term)
+        phrase_start = relative_start - term_offset
+        phrase_end = phrase_start + len(phrase)
+        if term_offset >= 0 and phrase_start >= 0 and context_text[phrase_start:phrase_end] == phrase:
+            relative_start = phrase_start
+            relative_end = phrase_end
+            replacement = phrase_replacement
+            break
+
+    rewritten = (
+        context_text[:relative_start]
+        + replacement
+        + context_text[relative_end:]
+    )
+    rewritten = re.sub(r"[\t ]{2,}", " ", rewritten)
+    rewritten = re.sub(r"([，。！？、；：,!.?;:])\1+", r"\1", rewritten)
+    return rewritten.strip()
+
+
+def build_line_review_items(
+    title: str,
+    body: str,
+    findings: list[Finding],
+) -> list[LineReviewItem]:
+    sources = {"标题": title or "", "正文": body or ""}
+    items: list[LineReviewItem] = []
+
+    for finding in findings:
+        source = sources.get(finding.position, "")
+        if not source or finding.start < 0 or finding.end > len(source):
+            continue
+        context_start, context_end = _find_context_span(
+            source,
+            finding.start,
+            finding.end,
+        )
+        original_text = source[context_start:context_end]
+        line_number = source.count("\n", 0, finding.start) + 1
+        item_key = (
+            f"{finding.position}:{finding.start}:{finding.end}:"
+            f"{finding.term}:{original_text}"
+        )
+        item_id = hashlib.sha1(item_key.encode("utf-8")).hexdigest()[:12]
+        items.append(
+            LineReviewItem(
+                item_id=item_id,
+                original_text=original_text,
+                context=f"{finding.position} · 第 {line_number} 行",
+                position=finding.position,
+                category=finding.category,
+                severity=finding.severity,
+                reason=finding.reason,
+                replacement_text=_build_minimal_replacement(
+                    original_text,
+                    finding,
+                    context_start,
+                ),
+            )
+        )
+    return items
+
+
+def build_supplier_feedback(items: list[LineReviewItem]) -> str:
+    if not items:
+        return "当前未发现需要修改的问题。"
+
+    sections = []
+    for index, item in enumerate(items, start=1):
+        sections.append(
+            "\n".join(
+                [
+                    f"问题{index}：",
+                    f"原句：{item.original_text}",
+                    f"问题：{item.reason}",
+                    f"建议修改为：{item.replacement_text}",
+                ]
+            )
+        )
+    return "\n\n".join(sections)
+
+
+def get_line_review_progress(
+    items: list[LineReviewItem],
+    statuses: dict[str, str],
+) -> tuple[int, int, int]:
+    total = len(items)
+    handled = sum(
+        1 for item in items if statuses.get(item.item_id) == "handled"
+    )
+    return total, handled, total - handled
 
 
 def rewrite_by_local_rules(text: str, findings: list[Finding], position: str) -> str:
@@ -76,7 +215,7 @@ def rewrite_by_local_rules(text: str, findings: list[Finding], position: str) ->
         rewritten = rewritten.replace(finding.term, finding.suggestion)
         seen_terms.add(finding.term)
 
-    return clean_rewritten_text(rewritten)
+    return clean_rewritten_text(rewritten, preserve_layout=position == "正文")
 
 
 def rewrite_all(

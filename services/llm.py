@@ -5,6 +5,8 @@ import os
 from pathlib import Path
 from typing import Any
 
+from services.creator_profile import build_creator_profile_context
+
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 ENV_PATH = BASE_DIR / ".env"
@@ -31,10 +33,11 @@ SYSTEM_PROMPT = """
 
 改写原则：
 1. 优先保证阅读流畅和自然表达。
-2. 可以调整语序、拆句、合并句子、补充连接词或整体重写一句。
+2. 只做消除审核风险所必需的最小修改，不重写未命中风险的正常句子。
 3. 保持作者原本表达意图，不凭空新增师资、案例、优惠、价格、名额或不存在的服务。
 4. 不要逐字替换，不要机械改写，不要把文案改成审核报告。
 5. 不要为了规避风险而删除全部营销卖点；优先优化风险表达，保留课程价值。
+6. 严格保留原有段落顺序、换行、表情、标签和正常课程卖点，不重新组织整篇文章结构。
 
 风险词优化规则：
 请结合上下文自然改写，不要生硬地逐词替换。可优先参考以下方向：
@@ -70,7 +73,7 @@ SYSTEM_PROMPT = """
 正文优化：
 正文要自然、像真人写，保持阅读节奏和家长沟通感。
 保留科目、阶段、场景、课程形式、方法和服务特点。
-不要只替换风险词；应将句子整体改写得顺畅、可信、有吸引力。
+仅在命中风险的句子中做最小必要调整；正常句子、原有换行、表情和标签必须原样保留。
 
 示例：
 原文：本人专收数理差生，每天1小时线上1v1，从拖后腿到黑马！
@@ -176,28 +179,47 @@ COVER_ANALYSIS_PROMPT = """
 """.strip()
 
 NOTE_GENERATION_PROMPT = """
-你是一名资深小红书教育赛道内容策划。请根据用户提供的主题、creator_profile 和 generation_options，生成一篇面向家长用户、可直接发布的小红书教育笔记。
+你是一名资深小红书教育赛道图文内容策划。请根据 source_materials、creator_profile 和 generation_options，生成面向家长、适合直接发布的标题与完整文案。
 
-内容要求：
-1. 以真实学习或陪学场景切入，准确呈现家长可能遇到的困扰。
-2. 正文提供自然、具体的经验分享和可执行的观察或方法，不虚构个人经历、教学资历、数据或案例。
-3. 语气像真实教育老师或家长分享，有温度、有节奏，不写成硬广或审核报告。
-4. 标题有点击吸引力，但避免夸张标题党和过度营销。
-5. 不使用保证、保过、包过、逆袭、满分、提分承诺、100%有效、短期暴涨、第一名、冠军、状元等违规营销或绝对化表达。
-6. 不出现引导私信、加微信、限时名额、价格优惠等违规引导。
-7. 标签须与主题相关、适合小红书使用，使用 # 开头。
-8. 封面文案简短有力，适合手机端大字展示，面向家长，不使用效果承诺。
-9. creator_profile 只包含用户确认可公开的资料。只能使用其中明确填写的内容；任何空白字段都不得虚构。
-10. 如果用户选择加入个人介绍、服务信息或行动引导，只能使用 creator_profile 中对应的已填写资料。价格、经历、案例、数据、家长反馈和结果必须来自 creator_profile，不能自行补造。
-11. 正文必须完整从开头钩子开始，不得以残句或句中片段开头。正文应依次包含：开头钩子、家长痛点、方法或观点、可用的创作者经验/身份、可选服务信息、自然行动引导。
-12. 不写空泛句子；优先使用与主题和用户已填写资料有关的具体学习场景。
+素材使用：
+1. 综合使用当前标题、正文、封面 OCR 文字、用户修正后的封面文字和补充主题，不要求素材字段全部存在。
+2. 用户修正后的封面文字优先于原始 OCR；不得臆测图片中未识别的信息。
+3. creator_profile 是唯一允许使用的身份、资历、科目、教学形式、时长、价格、案例和行动方式来源。
+4. 只有 generation_options 明确允许时，才把老师介绍、课程信息写入正文。
+
+真实性红线：
+1. creator_profile 未填写的经历、学员数量、家长反馈、教学成果、价格、案例和数据一律不得生成。
+2. 不得虚构提分数据、真实案例、CTR、曝光、留资、转化率或“家长都认可”等无法验证的事实。
+3. 案例复盘型仅能使用 source_materials 或 creator_profile 中真实存在的案例素材；没有案例时改为方法复盘，不补造人物和结果。
+
+内容方向：
+严格遵循 generation_options.content_direction 和 structure_guidance。不同方向必须使用明显不同的切入方式与段落结构。
+可参考家长痛点、老师身份与专业背书、教学理念、具体方法、课程服务、真实素材中的感受、形式时长价格和自然行动引导，但不要每次使用相同顺序。
+禁止固定使用“有个家长跟我说”等开头，禁止重复固定句式、固定表情或固定分隔符，不照抄任何示例。
+
+正文要求：
+1. 正文目标字数遵循 generation_options.length_range，且绝对不超过 1000 字。
+2. 必须有完整开头、具体用户痛点、核心观点或方法和完整结尾，不得从残句开始或突然中断。
+3. 写作自然、有经验分享感和转化力，但不空泛、不堆砌卖点、不过度营销。
+4. 可以灵活调整场景、观点、方法和服务信息的顺序，避免连续使用相同句式。
+5. 生成一条独立、简短、自然的 action；是否加入最终发布版由页面控制。
+
+标题要求：
+生成恰好 5 个不同类型标题，依次为痛点型、好奇型、干货型、老师经验型、家长共鸣型。
+标题保留真实科目、年级、学习场景和家长问题，但不得出现保证提分、30天提高50分、一定有效、百分百、必然逆袭或虚构数据。
+
+合规要求：
+1. 参考输入中的 risk_items，避开现有规则风险表达。
+2. 不使用绝对化承诺、保证结果、虚假案例、违规引导和夸大宣传。
+3. “孩子”“数学”等普通教育词可自然使用，不要把普通词自行升级成严重风险。
+4. 标签与主题相关，使用 # 开头，生成恰好 5 个。
 
 只输出合法 JSON，不要 Markdown、代码块或额外解释：
 {
-  "titles": ["标题1", "标题2", "标题3"],
+  "titles": ["标题1", "标题2", "标题3", "标题4", "标题5"],
   "body": "完整正文",
-  "tags": ["#标签1", "#标签2", "#标签3", "#标签4", "#标签5"],
-  "cover_copy": "封面文案"
+  "action": "简短行动引导",
+  "tags": ["#标签1", "#标签2", "#标签3", "#标签4", "#标签5"]
 }
 """.strip()
 
@@ -230,6 +252,45 @@ VIRAL_NOTE_ANALYSIS_PROMPT = """
   "viral_reasons": [""],
   "copyable_template": "",
   "suggestions": [""]
+}
+""".strip()
+
+VIRAL_IMAGE_ANALYSIS_PROMPT = """
+你是一名小红书教育赛道内容策划，请对爆款拆解中的主图进行“基于文字与基础元数据的图片拆解”。
+
+能力边界：
+1. 当前没有多模态视觉模型。你只能使用 OCR 文字、图片尺寸、宽高比、格式、用户补充描述和 risk_items。
+2. 不得声称真实识别了人物表情、字体大小、颜色对比、具体版式细节或图片中未提供的对象。
+3. 涉及主标题位置、文字层级、视觉焦点和人物/文字/背景关系时，必须明确使用“可能”“建议”“从现有文字推断”等措辞。
+4. 不得生成或推测 CTR、曝光、留资、转化率、爆款概率和平台推荐机制。
+
+分析要求：
+1. 吸引点：基于 OCR 文案判断第一眼可能吸引家长的内容。
+2. 版式结构：结合尺寸和宽高比，对主标题位置、文字层级、信息密度、视觉焦点、人物/文字/背景关系给出推断或建议。
+3. 文案结构：分析目标人群、家长痛点、老师或课程背书，以及价格、时长、1V1 等服务信息是否在已提供文字中出现。
+4. 风险点：结合 risk_items 判断夸大承诺或风险表达。
+5. 分别列出可复用元素和不建议照搬的内容。
+6. 只能评价点击潜力、可能的吸引点和可复用方向，不能虚构表现数据。
+
+只输出合法 JSON，不要 Markdown、代码块或额外解释：
+{
+  "attraction_points": [""],
+  "layout_structure": {
+    "headline_position": "",
+    "text_hierarchy": "",
+    "information_density": "",
+    "visual_focus": "",
+    "element_relationship": ""
+  },
+  "copy_structure": {
+    "target_audience": "",
+    "pain_point": "",
+    "credibility": "",
+    "service_information": ""
+  },
+  "risk_points": [""],
+  "reusable_elements": [""],
+  "avoid_copying": [""]
 }
 """.strip()
 
@@ -436,16 +497,32 @@ def parse_note_generation_response(content: str) -> dict[str, Any] | None:
     titles = clean_list(parsed.get("titles"))
     tags = clean_list(parsed.get("tags"))
     body = str(parsed.get("body", "")).strip()
-    cover_copy = str(parsed.get("cover_copy", "")).strip()
-    if len(titles) != 3 or len(tags) != 5 or not body or not cover_copy:
+    action = str(parsed.get("action", "")).strip()
+    if len(titles) != 5 or len(tags) != 5 or not body or not action:
         set_last_error("DeepSeek 笔记生成结果不完整，请重试")
         return None
 
     return {
         "titles": titles,
         "body": body,
+        "action": action,
         "tags": tags,
-        "cover_copy": cover_copy,
+    }
+
+
+def build_note_generation_payload(
+    topic: str,
+    creator_profile: dict[str, str] | None,
+    generation_options: dict[str, Any] | None,
+    source_materials: dict[str, Any] | None,
+    risk_items: list[Any] | None,
+) -> dict[str, Any]:
+    return {
+        "topic": (topic or "").strip(),
+        "source_materials": source_materials or {},
+        "creator_profile": build_creator_profile_context(creator_profile),
+        "generation_options": generation_options or {},
+        "risk_items": normalize_risk_items(risk_items or []),
     }
 
 
@@ -504,6 +581,66 @@ def parse_viral_note_analysis_response(content: str) -> dict[str, Any] | None:
         "copyable_template": template,
         "suggestions": clean_list(parsed.get("suggestions")),
     }
+
+
+def parse_viral_image_analysis_response(content: str) -> dict[str, Any] | None:
+    cleaned_content = content.strip()
+    if cleaned_content.startswith("```"):
+        cleaned_content = cleaned_content.strip("`").strip()
+        if cleaned_content.startswith("json"):
+            cleaned_content = cleaned_content[4:].strip()
+
+    try:
+        parsed = json.loads(cleaned_content)
+    except json.JSONDecodeError as error:
+        set_last_error(f"DeepSeek 图片拆解返回不是合法 JSON：{error.msg}")
+        return None
+
+    if not isinstance(parsed, dict):
+        set_last_error("DeepSeek 图片拆解返回不是对象")
+        return None
+    layout = parsed.get("layout_structure")
+    copy_structure = parsed.get("copy_structure")
+    if not isinstance(layout, dict) or not isinstance(copy_structure, dict):
+        set_last_error("DeepSeek 图片拆解结果缺少分析结构")
+        return None
+
+    def clean_list(value: Any) -> list[str]:
+        if not isinstance(value, list):
+            return []
+        return [str(item).strip() for item in value if str(item).strip()][:5]
+
+    result = {
+        "attraction_points": clean_list(parsed.get("attraction_points")),
+        "layout_structure": {
+            key: str(layout.get(key, "")).strip()
+            for key in (
+                "headline_position",
+                "text_hierarchy",
+                "information_density",
+                "visual_focus",
+                "element_relationship",
+            )
+        },
+        "copy_structure": {
+            key: str(copy_structure.get(key, "")).strip()
+            for key in (
+                "target_audience",
+                "pain_point",
+                "credibility",
+                "service_information",
+            )
+        },
+        "risk_points": clean_list(parsed.get("risk_points")),
+        "reusable_elements": clean_list(parsed.get("reusable_elements")),
+        "avoid_copying": clean_list(parsed.get("avoid_copying")),
+    }
+    forbidden_metrics = ("ctr", "曝光", "留资", "转化率", "爆款概率")
+    serialized = json.dumps(result, ensure_ascii=False).lower()
+    if any(term in serialized for term in forbidden_metrics):
+        set_last_error("图片拆解包含无法验证的表现数据，已拒绝展示")
+        return None
+    return result
 
 
 def parse_pre_publish_report_response(content: str) -> dict[str, Any] | None:
@@ -706,6 +843,8 @@ def generate_xiaohongshu_note(
     topic: str,
     creator_profile: dict[str, str] | None = None,
     generation_options: dict[str, Any] | None = None,
+    source_materials: dict[str, Any] | None = None,
+    risk_items: list[Any] | None = None,
 ) -> dict[str, Any] | None:
     set_last_error("")
     api_key = get_deepseek_api_key()
@@ -729,11 +868,13 @@ def generate_xiaohongshu_note(
                 {
                     "role": "user",
                     "content": json.dumps(
-                        {
-                            "topic": topic,
-                            "creator_profile": creator_profile or {},
-                            "generation_options": generation_options or {},
-                        },
+                        build_note_generation_payload(
+                            topic,
+                            creator_profile,
+                            generation_options,
+                            source_materials,
+                            risk_items,
+                        ),
                         ensure_ascii=False,
                     ),
                 },
@@ -774,6 +915,40 @@ def analyze_viral_note(title: str, body: str) -> dict[str, Any] | None:
         )
         content = response.choices[0].message.content or ""
         return parse_viral_note_analysis_response(content)
+    except Exception as error:
+        set_last_error(f"{type(error).__name__}: {error}")
+        return None
+
+
+def analyze_viral_image(image_context: dict[str, Any]) -> dict[str, Any] | None:
+    set_last_error("")
+    api_key = get_deepseek_api_key()
+    print_deepseek_diagnostics(api_key)
+    if not api_key:
+        set_last_error(f"未读取到 DEEPSEEK_API_KEY，请检查 {ENV_PATH}")
+        return None
+
+    try:
+        from openai import OpenAI
+    except ModuleNotFoundError:
+        set_last_error("未安装 openai 依赖，请先安装 requirements.txt")
+        return None
+
+    try:
+        client = OpenAI(api_key=api_key, base_url=DEEPSEEK_BASE_URL)
+        response = client.chat.completions.create(
+            model=DEEPSEEK_MODEL,
+            messages=[
+                {"role": "system", "content": VIRAL_IMAGE_ANALYSIS_PROMPT},
+                {
+                    "role": "user",
+                    "content": json.dumps(image_context, ensure_ascii=False),
+                },
+            ],
+            temperature=0.4,
+        )
+        content = response.choices[0].message.content or ""
+        return parse_viral_image_analysis_response(content)
     except Exception as error:
         set_last_error(f"{type(error).__name__}: {error}")
         return None

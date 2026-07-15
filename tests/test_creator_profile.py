@@ -51,3 +51,21 @@ class CreatorProfileTests(unittest.TestCase):
                 self.assertEqual(history.load_history(), [])
                 history_path.write_text(json.dumps({"invalid": True}), encoding="utf-8")
                 self.assertEqual(history.load_history(), [])
+
+    def test_history_record_contains_line_review_without_external_document(self) -> None:
+        record = history.create_history_record(
+            record_id="review-1",
+            title="测试标题",
+            body="测试正文",
+            safety_score=80,
+            risk_level="中风险",
+            risk_items=[{"风险词": "测试"}],
+            rewritten_title="安全标题",
+            rewritten_body="安全正文",
+            line_review_items=[{"item_id": "item-1", "original_text": "测试正文"}],
+            line_review_statuses={"item-1": "handled"},
+        )
+
+        self.assertEqual(record["risk_count"], 1)
+        self.assertEqual(record["line_review_statuses"], {"item-1": "handled"})
+        self.assertNotIn("external_document", record)

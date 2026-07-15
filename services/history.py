@@ -72,6 +72,8 @@ def create_history_record(
     image_ocr_text: str = "",
     title_candidates: list[str] | None = None,
     cover_analysis: dict[str, Any] | None = None,
+    line_review_items: list[dict[str, Any]] | None = None,
+    line_review_statuses: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     return {
         "id": record_id,
@@ -86,6 +88,10 @@ def create_history_record(
         "image_ocr_text": image_ocr_text,
         "title_candidates": title_candidates or [],
         "cover_analysis": cover_analysis,
+        "original_summary": " ".join(f"{title} {body}".split())[:160],
+        "risk_count": len(risk_items),
+        "line_review_items": line_review_items or [],
+        "line_review_statuses": line_review_statuses or {},
     }
 
 
