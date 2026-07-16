@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from pathlib import Path
 from typing import Any
 
@@ -186,6 +187,8 @@ NOTE_GENERATION_PROMPT = """
 3. creator_profile 是唯一允许使用的身份、资历、科目、教学形式、时长、价格、案例和行动方式来源。
 4. 只有 generation_options 明确允许时，才把老师介绍、课程信息写入正文。
 5. source_materials.cover_analysis 和 source_materials.image_analysis 是图片分析结果；只能使用其中有素材依据的结论。
+6. source_materials.viral_examples 是用户保存的历史跑量案例，只能参考其开头方式、内容结构、家长痛点表达、老师 IP 展示、方法拆解和自然转化方式。
+7. 不得复制 viral_examples 的标题、原句、段落或案例事实，不得把历史案例中的人物、数据和经历写成当前创作者的事实。
 
 真实性红线：
 1. creator_profile 未填写的经历、学员数量、家长反馈、教学成果、价格、案例和数据一律不得生成。
@@ -202,6 +205,7 @@ NOTE_GENERATION_PROMPT = """
 3. creator_profile 中没有的老师身份或背书必须省略，不得为了补齐结构而虚构。
 4. 图片中无法从 OCR 或已确认资料证实的人物、场景、案例和效果不得写入文案。
 5. 不得生成成绩保证、短期效果承诺或任何未经用户确认的转化数据。
+6. 如有 viral_examples，提炼多个案例的共同写法后重新创作，不得贴近或复刻某一篇原文。
 
 正文要求：
 1. 正文目标字数遵循 generation_options.length_range，且绝对不超过 1000 字。
@@ -209,6 +213,7 @@ NOTE_GENERATION_PROMPT = """
 3. 写作自然、有经验分享感和转化力，但不空泛、不堆砌卖点、不过度营销。
 4. 可以灵活调整场景、观点、方法和服务信息的顺序，避免连续使用相同句式。
 5. 生成一条独立、简短、自然的 action；是否加入最终发布版由页面控制。
+6. 图片模式使用小红书投放素材的阅读节奏：真实家长场景开头、适量 emoji、清晰分段、短句和方法列表，并自然呈现已确认的老师背书、服务价值与行动引导。
 
 标题要求：
 生成恰好 5 个不同类型标题，依次为痛点型、好奇型、干货型、老师经验型、家长共鸣型。
@@ -587,6 +592,30 @@ def build_note_generation_payload(
     }
 
 
+def copies_viral_example(
+    generated: dict[str, Any],
+    examples: list[dict[str, str]],
+) -> bool:
+    generated_titles = {
+        re.sub(r"\s+", "", str(title))
+        for title in generated.get("titles", [])
+        if str(title).strip()
+    }
+    generated_body = re.sub(r"\s+", "", str(generated.get("body", "")))
+    for example in examples:
+        example_title = re.sub(r"\s+", "", str(example.get("title", "")))
+        if example_title and example_title in generated_titles:
+            return True
+
+        content = str(example.get("content", ""))
+        fragments = [content, *content.splitlines()]
+        for fragment in fragments:
+            normalized = re.sub(r"\s+", "", fragment)
+            if len(normalized) >= 24 and normalized in generated_body:
+                return True
+    return False
+
+
 def parse_viral_note_analysis_response(content: str) -> dict[str, Any] | None:
     cleaned_content = content.strip()
     if cleaned_content.startswith("```"):
@@ -943,7 +972,12 @@ def generate_xiaohongshu_note(
             temperature=0.8,
         )
         content = response.choices[0].message.content or ""
-        return parse_note_generation_response(content)
+        parsed = parse_note_generation_response(content)
+        examples = (source_materials or {}).get("viral_examples", [])
+        if parsed and isinstance(examples, list) and copies_viral_example(parsed, examples):
+            set_last_error("生成结果与历史案例存在直接重复，请重新生成。")
+            return None
+        return parsed
     except Exception as error:
         set_last_error(f"{type(error).__name__}: {error}")
         return None

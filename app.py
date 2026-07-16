@@ -22,7 +22,7 @@ from services.creator_profile import (
     save_creator_profile,
 )
 from services.image_reviewer import ImageReviewResult, review_image
-from services.image_ocr import extract_text_with_status, get_available_ocr_engine
+from services.image_ocr import extract_text_details, extract_text_with_status, get_available_ocr_engine
 from services.image_input import (
     ImageInputError,
     normalize_image_input,
@@ -51,6 +51,7 @@ from services.note_generator import (
     finalize_generated_note,
     get_structure_guidance,
 )
+from services.ocr_postprocessor import correct_ocr_text
 from services.llm import (
     analyze_cover,
     analyze_note_image_source,
@@ -97,11 +98,13 @@ from services.viral_analyzer import (
     can_analyze_viral_input,
     store_viral_image_payload,
 )
+from services.viral_examples import load_viral_examples
 
 
 BASE_DIR = Path(__file__).resolve().parent
 RULE_PATH = BASE_DIR / "data" / "rules.json"
 CREATOR_PROFILE_PATH = BASE_DIR / "data" / "creator_profile.json"
+VIRAL_EXAMPLES_PATH = BASE_DIR / "data" / "viral_examples.json"
 EXPERIENCE_TITLE = "数学差生逆袭秘籍！30天提高50分"
 EXPERIENCE_BODY = """孩子数学一直拖后腿，
 我通过每天1小时线上1v1辅导，
@@ -152,6 +155,11 @@ def reset_review() -> None:
     st.session_state.pop("cover_analysis", None)
     st.session_state.pop("cover_analysis_error", None)
     st.session_state.pop("cover_ocr_lines", None)
+    st.session_state.pop("cover_ocr_raw_lines", None)
+    st.session_state.pop("cover_ocr_optimized_lines", None)
+    st.session_state.pop("cover_ocr_confidence", None)
+    st.session_state.pop("cover_ocr_corrections", None)
+    st.session_state.pop("cover_ocr_requires_confirmation", None)
     st.session_state.pop("cover_ocr_attempt_key", None)
     st.session_state.pop("cover_ocr_error", None)
     st.session_state.pop("cover_ocr_status", None)
@@ -192,6 +200,11 @@ def load_experience_case() -> None:
     st.session_state.pop("cover_analysis", None)
     st.session_state.pop("cover_analysis_error", None)
     st.session_state.pop("cover_ocr_lines", None)
+    st.session_state.pop("cover_ocr_raw_lines", None)
+    st.session_state.pop("cover_ocr_optimized_lines", None)
+    st.session_state.pop("cover_ocr_confidence", None)
+    st.session_state.pop("cover_ocr_corrections", None)
+    st.session_state.pop("cover_ocr_requires_confirmation", None)
     st.session_state.pop("cover_ocr_attempt_key", None)
     st.session_state.pop("cover_ocr_error", None)
     st.session_state.pop("cover_ocr_status", None)
@@ -1796,9 +1809,15 @@ def render_page_hero(title: str, subtitle: str, description: str) -> None:
     )
 
 
-def ensure_cover_ocr(image_bytes: bytes) -> tuple[list[str], str]:
+def ensure_cover_ocr(
+    image_bytes: bytes,
+    creator_profile: dict[str, str] | None = None,
+) -> tuple[list[str], str]:
     image_key = hashlib.sha256(image_bytes).hexdigest()
-    attempt_key = f"{image_key}:{get_available_ocr_engine()}"
+    profile_key = hashlib.sha256(
+        json.dumps(creator_profile or {}, ensure_ascii=False, sort_keys=True).encode("utf-8")
+    ).hexdigest()[:12]
+    attempt_key = f"{image_key}:{get_available_ocr_engine()}:{profile_key}"
     if st.session_state.get("cover_ocr_attempt_key") != attempt_key:
         for key in (
             "cover_analysis",
@@ -1812,13 +1831,29 @@ def ensure_cover_ocr(image_bytes: bytes) -> tuple[list[str], str]:
             st.session_state.pop(key, None)
         st.session_state["image_text_input"] = ""
         st.session_state["draft_image_text"] = ""
-        ocr_lines, ocr_error = extract_text_with_status(image_bytes)
+        extraction = extract_text_details(image_bytes)
+        raw_text = "\n".join(extraction.lines)
+        correction = correct_ocr_text(
+            raw_text,
+            creator_profile=creator_profile,
+            confidence=extraction.average_confidence,
+        )
+        optimized_lines = [
+            line.strip()
+            for line in correction.optimized_text.splitlines()
+            if line.strip()
+        ]
         st.session_state["cover_ocr_attempt_key"] = attempt_key
-        st.session_state["cover_ocr_lines"] = ocr_lines
-        st.session_state["cover_ocr_error"] = ocr_error
-        st.session_state["cover_ocr_status"] = "success" if ocr_lines else "failed"
-        if ocr_lines:
-            recognized_text = "\n".join(ocr_lines)
+        st.session_state["cover_ocr_raw_lines"] = extraction.lines
+        st.session_state["cover_ocr_optimized_lines"] = optimized_lines
+        st.session_state["cover_ocr_lines"] = optimized_lines
+        st.session_state["cover_ocr_confidence"] = extraction.average_confidence
+        st.session_state["cover_ocr_corrections"] = list(correction.changes)
+        st.session_state["cover_ocr_requires_confirmation"] = correction.requires_confirmation
+        st.session_state["cover_ocr_error"] = extraction.error
+        st.session_state["cover_ocr_status"] = "success" if optimized_lines else "failed"
+        if optimized_lines:
+            recognized_text = "\n".join(optimized_lines)
             st.session_state["image_text_input"] = recognized_text
             st.session_state["draft_image_text"] = recognized_text
     return (
@@ -1878,7 +1913,12 @@ def auto_analyze_cover_once(image_bytes: bytes, rules: list[Rule]) -> None:
         analyze_cover_text(image_bytes, cover_text, rules, source="automatic")
 
 
-def process_image_input(image: object, source: str, rules: list[Rule]) -> bool:
+def process_image_input(
+    image: object,
+    source: str,
+    rules: list[Rule],
+    creator_profile: dict[str, str] | None = None,
+) -> bool:
     try:
         payload = normalize_image_input(image, source)
     except ImageInputError as error:
@@ -1893,12 +1933,15 @@ def process_image_input(image: object, source: str, rules: list[Rule]) -> bool:
     st.session_state.pop("image_input_error", None)
     is_new_image = store_image_payload(st.session_state, payload)
     if is_new_image:
-        ensure_cover_ocr(payload.image_bytes)
+        ensure_cover_ocr(payload.image_bytes, creator_profile)
         auto_analyze_cover_once(payload.image_bytes, rules)
     return is_new_image
 
 
-def render_cover_diagnosis_page(rules: list[Rule]) -> None:
+def render_cover_diagnosis_page(
+    rules: list[Rule],
+    creator_profile: dict[str, str],
+) -> None:
     render_page_hero(
         "封面诊断",
         "上传封面并分析文字与点击吸引力",
@@ -1912,7 +1955,7 @@ def render_cover_diagnosis_page(rules: list[Rule]) -> None:
             key=f"cover_page_upload_{st.session_state['uploader_key']}",
         )
         if uploaded_image:
-            process_image_input(uploaded_image, "upload", rules)
+            process_image_input(uploaded_image, "upload", rules, creator_profile)
 
     with clipboard_tab:
         st.markdown("**请先复制图片，然后点击此区域并按 Command/Ctrl + V。**")
@@ -1931,7 +1974,7 @@ def render_cover_diagnosis_page(rules: list[Rule]) -> None:
                 )
                 pasted_image, paste_message = extract_pasted_image(paste_result)
                 if pasted_image is not None:
-                    process_image_input(pasted_image, "clipboard", rules)
+                    process_image_input(pasted_image, "clipboard", rules, creator_profile)
                     if not st.session_state.get("image_input_error"):
                         st.success("图片已粘贴，可继续识别和分析。")
                 else:
@@ -1950,7 +1993,7 @@ def render_cover_diagnosis_page(rules: list[Rule]) -> None:
         st.info("先上传或粘贴封面，也可以从创作工作台带入已上传的封面。")
         return
 
-    ocr_lines, ocr_error = ensure_cover_ocr(image_bytes)
+    ocr_lines, ocr_error = ensure_cover_ocr(image_bytes, creator_profile)
     auto_analyze_cover_once(image_bytes, rules)
     st.image(image_bytes, caption="封面预览", use_container_width=True)
     if "image_text_input" not in st.session_state:
@@ -1971,8 +2014,24 @@ def render_cover_diagnosis_page(rules: list[Rule]) -> None:
             st.warning(ocr_error)
         elif ocr_lines:
             st.caption("OCR 已自动填充以下文字。")
+        raw_ocr_text = "\n".join(st.session_state.get("cover_ocr_raw_lines", []))
+        if raw_ocr_text:
+            st.text_area(
+                "原始识别文本",
+                value=raw_ocr_text,
+                height=120,
+                disabled=True,
+                key=f"cover_ocr_raw_display_{st.session_state.get('current_image_hash', '')}",
+            )
+        corrections = st.session_state.get("cover_ocr_corrections", [])
+        if corrections:
+            st.caption("已优化：" + "；".join(corrections))
+        if st.session_state.get("cover_ocr_requires_confirmation") and raw_ocr_text:
+            confidence = st.session_state.get("cover_ocr_confidence")
+            confidence_label = f"（平均置信度 {confidence:.0f}%）" if confidence is not None else ""
+            st.warning(f"OCR 置信度较低或未知{confidence_label}，未强制纠错，请人工确认。")
         cover_text = st.text_area(
-            "封面文字（可编辑）",
+            "优化后文本（可编辑）",
             placeholder="补充封面或海报中的文字",
             height=180,
             key="image_text_input",
@@ -2368,7 +2427,7 @@ def main() -> None:
         render_rule_management()
         return
     if workspace_page == "封面诊断":
-        render_cover_diagnosis_page(rules)
+        render_cover_diagnosis_page(rules, creator_profile)
         return
     if workspace_page == "爆款拆解":
         render_viral_workspace(rules)
@@ -2442,7 +2501,7 @@ def main() -> None:
                 key=f"image_upload_{st.session_state['uploader_key']}",
             )
             if uploaded_image:
-                process_image_input(uploaded_image, "upload", rules)
+                process_image_input(uploaded_image, "upload", rules, creator_profile)
             active_image_bytes = get_current_image_bytes()
             if active_image_bytes:
                 st.image(active_image_bytes, caption="封面已添加，可在“封面诊断”继续处理", use_container_width=True)
@@ -2724,6 +2783,7 @@ def main() -> None:
                 cover_analysis=cover_analysis,
             )
             rule_constraints = build_rule_constraints(rules)
+            viral_examples = load_viral_examples(VIRAL_EXAMPLES_PATH) if image_mode else []
             if image_context:
                 image_context["rule_constraints"] = rule_constraints
             if image_mode:
@@ -2866,6 +2926,7 @@ def main() -> None:
                         "cover_analysis": cover_analysis or {},
                         "image_analysis": image_analysis or {},
                         "rule_constraints": rule_constraints,
+                        "viral_examples": viral_examples,
                     }
                     structure_seed = "|".join(
                         [note_topic, title.strip(), body.strip()[:160], corrected_cover_text]

@@ -8,6 +8,7 @@ from services.llm import (
     NOTE_GENERATION_PROMPT,
     NOTE_IMAGE_ANALYSIS_PROMPT,
     build_note_generation_payload,
+    copies_viral_example,
     parse_note_image_analysis_response,
 )
 from services.note_generator import (
@@ -167,6 +168,46 @@ class NoteGeneratorTests(unittest.TestCase):
         )
         self.assertIn("rule_constraints", NOTE_GENERATION_PROMPT)
         self.assertIn("rule_constraints", NOTE_IMAGE_ANALYSIS_PROMPT)
+
+    def test_image_generation_payload_keeps_viral_examples_as_style_reference(self) -> None:
+        examples = [
+            {
+                "title": "陪娃学数学时，家长最容易忽略什么",
+                "content": "先描述真实场景，再拆解学习方法。",
+            }
+        ]
+        payload = build_note_generation_payload(
+            "初二数学",
+            creator_profile={"name": "刘老师"},
+            generation_options={"generation_mode": "根据图片生成"},
+            source_materials={
+                "image_analysis": {"cover_theme": "数学学习"},
+                "viral_examples": examples,
+            },
+            risk_items=[],
+        )
+
+        self.assertEqual(payload["source_materials"]["viral_examples"], examples)
+        self.assertIn("不得复制 viral_examples", NOTE_GENERATION_PROMPT)
+        self.assertIn("适量 emoji", NOTE_GENERATION_PROMPT)
+
+    def test_direct_viral_example_copy_is_rejected(self) -> None:
+        examples = [
+            {
+                "title": "初二数学总出错，先检查这个学习习惯",
+                "content": "陪娃整理错题时，先不要急着讲答案，可以先让娃说清楚卡在哪一步。",
+            }
+        ]
+
+        copied_title = generated_note()
+        copied_title["titles"][0] = examples[0]["title"]
+        self.assertTrue(copies_viral_example(copied_title, examples))
+
+        copied_body = generated_note(examples[0]["content"])
+        self.assertTrue(copies_viral_example(copied_body, examples))
+
+        original_note = generated_note("可以围绕当前图片主题重新组织方法说明。")
+        self.assertFalse(copies_viral_example(original_note, examples))
 
     def test_image_only_mode_can_generate_from_confirmed_ocr(self) -> None:
         context = build_image_source_context(

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from functools import lru_cache
+from dataclasses import dataclass
 from io import BytesIO
 import logging
 import re
@@ -9,6 +10,14 @@ from typing import Any
 
 
 LOGGER = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class OcrExtractionResult:
+    lines: list[str]
+    error: str
+    average_confidence: float | None
+    engine: str
 
 
 def is_paddle_ocr_available() -> bool:
@@ -149,14 +158,19 @@ def _extract_with_tesseract(img: Any) -> tuple[list[str], float | None]:
     return lines, mean(confidences) if confidences else None
 
 
-def extract_text_with_status(image: Any) -> tuple[list[str], str]:
+def extract_text_details(image: Any) -> OcrExtractionResult:
     if not is_ocr_available():
-        return [], get_ocr_dependency_message()
+        return OcrExtractionResult([], get_ocr_dependency_message(), None, "unavailable")
 
     try:
         img = _open_image(image)
     except Exception:
-        return [], "图片文件无法读取，请重新上传有效的 PNG、JPEG 或 WEBP 图片。"
+        return OcrExtractionResult(
+            [],
+            "图片文件无法读取，请重新上传有效的 PNG、JPEG 或 WEBP 图片。",
+            None,
+            "unavailable",
+        )
 
     quality_errors: list[str] = []
     engines = (
@@ -170,14 +184,29 @@ def extract_text_with_status(image: Any) -> tuple[list[str], str]:
             lines, confidence = extractor(img)
             quality_error = assess_text_quality(lines, confidence)
             if not quality_error:
-                return lines, ""
+                return OcrExtractionResult(lines, "", confidence, engine_name)
             quality_errors.append(quality_error)
         except Exception as error:
             LOGGER.warning("%s OCR failed: %s", engine_name, error)
 
     if quality_errors:
-        return [], quality_errors[-1] + " 可继续手动输入封面文字。"
-    return [], "OCR 初始化或识别失败，请检查模型安装；也可继续手动输入封面文字。"
+        return OcrExtractionResult(
+            [],
+            quality_errors[-1] + " 可继续手动输入封面文字。",
+            None,
+            "unavailable",
+        )
+    return OcrExtractionResult(
+        [],
+        "OCR 初始化或识别失败，请检查模型安装；也可继续手动输入封面文字。",
+        None,
+        "unavailable",
+    )
+
+
+def extract_text_with_status(image: Any) -> tuple[list[str], str]:
+    result = extract_text_details(image)
+    return result.lines, result.error
 
 
 def extract_text(image: Any) -> list[str]:
