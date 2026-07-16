@@ -7,13 +7,17 @@ from PIL import Image
 from services.llm import (
     NOTE_GENERATION_PROMPT,
     NOTE_IMAGE_ANALYSIS_PROMPT,
+    VIRAL_EXAMPLE_ANALYSIS_PROMPT,
     build_note_generation_payload,
     copies_viral_example,
+    parse_note_generation_response,
     parse_note_image_analysis_response,
+    parse_viral_example_analysis_response,
 )
 from services.note_generator import (
     GENERATION_MODES,
     IMAGE_GENERATION_STRUCTURE,
+    IMAGE_NOTE_TITLE_COUNT,
     build_image_source_context,
     build_generation_request_key,
     build_publish_version,
@@ -22,6 +26,7 @@ from services.note_generator import (
     finalize_generated_note,
     get_structure_guidance,
     truncate_complete_text,
+    validate_image_note_format,
 )
 from services.rule_checker import check_text, load_rules
 
@@ -183,13 +188,71 @@ class NoteGeneratorTests(unittest.TestCase):
             source_materials={
                 "image_analysis": {"cover_theme": "数学学习"},
                 "viral_examples": examples,
+                "viral_example_analysis": {
+                    "opening_style": "家长场景切入",
+                    "structure": ["痛点", "方法", "服务"],
+                    "conversion_style": "咨询学习规划",
+                },
             },
             risk_items=[],
         )
 
         self.assertEqual(payload["source_materials"]["viral_examples"], examples)
+        self.assertIn("viral_example_analysis", payload["source_materials"])
         self.assertIn("不得复制 viral_examples", NOTE_GENERATION_PROMPT)
         self.assertIn("适量 emoji", NOTE_GENERATION_PROMPT)
+        self.assertIn("历史跑量案例", VIRAL_EXAMPLE_ANALYSIS_PROMPT)
+
+    def test_image_mode_accepts_three_titles_and_second_review(self) -> None:
+        note = generated_note()
+        note["titles"] = note["titles"][:IMAGE_NOTE_TITLE_COUNT]
+        parsed = parse_note_generation_response(
+            __import__("json").dumps(note, ensure_ascii=False),
+            expected_title_count=IMAGE_NOTE_TITLE_COUNT,
+        )
+
+        self.assertEqual(len(parsed["titles"]), 3)
+        result = finalize_generated_note(
+            parsed,
+            self.rules,
+            max_body_chars=1000,
+            expected_title_count=IMAGE_NOTE_TITLE_COUNT,
+        )
+        self.assertEqual(len(result["titles"]), 3)
+        self.assertTrue(result["passed_second_review"])
+
+    def test_viral_example_analysis_parser_keeps_generation_guidance(self) -> None:
+        parsed = parse_viral_example_analysis_response(
+            '{"category":"精准筛选型","opening_style":"家长场景",'
+            '"structure":["痛点","方法","服务"],"pain_expression":"具体困扰",'
+            '"emotional_trigger":"共鸣","teacher_ip_style":"真实资料",'
+            '"method_style":"步骤拆解","service_style":"学前学中学后",'
+            '"conversion_style":"咨询规划","layout_style":"短句分段",'
+            '"analysis_basis":"多个案例共同规律"}'
+        )
+
+        self.assertEqual(parsed["category"], "精准筛选型")
+        self.assertEqual(parsed["structure"], ["痛点", "方法", "服务"])
+
+    def test_image_note_format_requires_xiaohongshu_rhythm(self) -> None:
+        paragraphs = [
+            "👇你家娃是不是也会在数学题前卡住？先别急着把问题归结为不认真。",
+            "❌很多时候，不是理解能力不够，而是解题步骤和练习节奏没有梳理清楚。",
+            "👩‍🏫老师介绍只使用已保存的真实资料，不补写未经确认的经历和成绩。",
+            "1️⃣先定位卡点。让学习者说清楚题目条件、已知信息和真正不会的步骤。",
+            "2️⃣再拆解方法。把一道题分成读题、列式、验证三个可重复的小动作。",
+            "3️⃣最后复盘。记录本次卡点，下次遇到相似题型先独立尝试再核对。",
+            "⭐服务信息也只呈现资料中已确认的形式、时长和支持方式，不夸大结果。",
+            "📌学前先了解问题，学中重视互动和反馈，学后是否复盘以已保存资料为准。",
+            "👉想进一步梳理学习情况，可以结合当前阶段咨询适合的学习规划。",
+        ]
+        body = "\n\n".join(paragraphs * 3)
+        body = body[:980]
+        generated = {"body": body}
+
+        self.assertEqual(validate_image_note_format(generated), [])
+        issues = validate_image_note_format({"body": "普通长文" * 120})
+        self.assertTrue(any("缺少适量 emoji" in issue for issue in issues))
 
     def test_direct_viral_example_copy_is_rejected(self) -> None:
         examples = [

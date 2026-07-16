@@ -43,6 +43,9 @@ from services.note_generator import (
     CONTENT_DIRECTIONS,
     GENERATION_MODES,
     IMAGE_GENERATION_STRUCTURE,
+    IMAGE_NOTE_MAX_CHARS,
+    IMAGE_NOTE_MIN_CHARS,
+    IMAGE_NOTE_TITLE_COUNT,
     LENGTH_RANGES,
     build_image_source_context,
     build_generation_request_key,
@@ -50,11 +53,13 @@ from services.note_generator import (
     can_generate_note,
     finalize_generated_note,
     get_structure_guidance,
+    validate_image_note_format,
 )
 from services.ocr_postprocessor import correct_ocr_text
 from services.llm import (
     analyze_cover,
     analyze_note_image_source,
+    analyze_viral_examples_for_generation,
     analyze_viral_image,
     analyze_viral_note,
     generate_pre_publish_report,
@@ -2800,18 +2805,20 @@ def main() -> None:
                 if image_mode:
                     content_direction = "图片驱动固定结构"
                     st.info("固定结构：用户痛点 → 老师背书 → 课程/服务 → 优势 → 行动引导")
+                    length_range = "800—1000字"
+                    st.caption("图片模式正文固定为 800—1000 字，适配小红书投放阅读节奏。")
                 else:
                     content_direction = st.selectbox(
                         "内容方向",
                         CONTENT_DIRECTIONS,
                         key="note_content_direction",
                     )
-                length_range = st.selectbox(
-                    "字数范围",
-                    list(LENGTH_RANGES),
-                    index=1,
-                    key="note_length_range",
-                )
+                    length_range = st.selectbox(
+                        "字数范围",
+                        list(LENGTH_RANGES),
+                        index=1,
+                        key="note_length_range",
+                    )
                 if image_mode:
                     include_intro = any(
                         creator_profile.get(field, "").strip()
@@ -2874,13 +2881,17 @@ def main() -> None:
                 if not can_generate:
                     st.warning(generation_error)
                 else:
+                    st.session_state["note_generation_error"] = ""
                     confirmed_image_text = str(image_context.get("confirmed_cover_text", "")).strip()
                     note_topic = (
                         topic.strip()
                         or (confirmed_image_text.splitlines()[0] if confirmed_image_text else "")
                         or title.strip()
                     )
-                    min_chars, max_chars = LENGTH_RANGES[length_range]
+                    if image_mode:
+                        min_chars, max_chars = IMAGE_NOTE_MIN_CHARS, IMAGE_NOTE_MAX_CHARS
+                    else:
+                        min_chars, max_chars = LENGTH_RANGES[length_range]
                     source_title = "" if image_mode else title.strip()
                     source_body = "" if image_mode else body.strip()
                     source_findings = list(findings)
@@ -2916,6 +2927,41 @@ def main() -> None:
                         if not image_analysis:
                             image_analysis_error = get_last_error() or "图片素材分析失败，请稍后重试。"
 
+                    viral_example_analysis: dict = {}
+                    viral_example_analysis_error = ""
+                    if image_mode and viral_examples and image_analysis:
+                        example_analysis_key = build_generation_request_key(
+                            {
+                                "viral_examples": viral_examples,
+                                "image_analysis": image_analysis,
+                            }
+                        )
+                        if (
+                            st.session_state.get("note_viral_example_analysis_key")
+                            == example_analysis_key
+                            and st.session_state.get("note_viral_example_analysis")
+                        ):
+                            viral_example_analysis = st.session_state[
+                                "note_viral_example_analysis"
+                            ]
+                        else:
+                            with st.spinner("正在拆解历史跑量案例的共同写法..."):
+                                analyzed_examples = analyze_viral_examples_for_generation(
+                                    viral_examples,
+                                    image_analysis=image_analysis,
+                                )
+                            st.session_state["note_viral_example_analysis_key"] = (
+                                example_analysis_key
+                            )
+                            st.session_state["note_viral_example_analysis"] = (
+                                analyzed_examples or {}
+                            )
+                            viral_example_analysis = analyzed_examples or {}
+                        if not viral_example_analysis:
+                            viral_example_analysis_error = (
+                                get_last_error() or "历史案例拆解失败，请稍后重试。"
+                            )
+
                     source_materials = {
                         "current_title": source_title,
                         "current_body": source_body,
@@ -2925,6 +2971,7 @@ def main() -> None:
                         "corrected_cover_text": corrected_cover_text,
                         "cover_analysis": cover_analysis or {},
                         "image_analysis": image_analysis or {},
+                        "viral_example_analysis": viral_example_analysis,
                         "rule_constraints": rule_constraints,
                         "viral_examples": viral_examples,
                     }
@@ -2947,6 +2994,7 @@ def main() -> None:
                     }
                     if image_mode:
                         generation_options["structure_guidance"] = IMAGE_GENERATION_STRUCTURE
+                        generation_options["expected_title_count"] = IMAGE_NOTE_TITLE_COUNT
                     request_payload = {
                         "topic": note_topic,
                         "source_materials": source_materials,
@@ -2956,8 +3004,9 @@ def main() -> None:
                     }
                     request_key = build_generation_request_key(request_payload)
                     note_result = None
-                    if image_analysis_error:
-                        st.session_state["note_generation_error"] = image_analysis_error
+                    blocking_error = image_analysis_error or viral_example_analysis_error
+                    if blocking_error:
+                        st.session_state["note_generation_error"] = blocking_error
                     else:
                         with st.spinner("正在根据当前图文素材生成标题和文案..."):
                             raw_note = generate_xiaohongshu_note(
@@ -2967,25 +3016,42 @@ def main() -> None:
                                 source_materials=source_materials,
                                 risk_items=source_findings,
                             )
-                            note_result = (
-                                finalize_generated_note(
-                                    raw_note,
-                                    rules,
-                                    max_body_chars=max_chars,
-                                    include_action=include_action,
-                                    include_tags=include_tags,
-                                )
-                                if raw_note
-                                else None
+                            format_issues = (
+                                validate_image_note_format(raw_note)
+                                if image_mode and raw_note
+                                else []
                             )
+                            if format_issues:
+                                st.session_state["note_generation_error"] = (
+                                    "生成结果未达到图片投放格式要求："
+                                    + "；".join(format_issues)
+                                    + "。请重新生成。"
+                                )
+                            else:
+                                note_result = (
+                                    finalize_generated_note(
+                                        raw_note,
+                                        rules,
+                                        max_body_chars=max_chars,
+                                        include_action=include_action,
+                                        include_tags=include_tags,
+                                        expected_title_count=(
+                                            IMAGE_NOTE_TITLE_COUNT if image_mode else 5
+                                        ),
+                                    )
+                                    if raw_note
+                                    else None
+                                )
                     if note_result:
                         note_result["request_key"] = request_key
                         note_result["generation_mode"] = generation_mode
                         note_result["image_analysis"] = image_analysis
                         st.session_state["note_generation_key"] = request_key
                     st.session_state["note_generation_result"] = note_result
-                    if not image_analysis_error:
-                        st.session_state["note_generation_error"] = "" if note_result else get_last_error()
+                    if not blocking_error and note_result:
+                        st.session_state["note_generation_error"] = ""
+                    elif not blocking_error and not st.session_state.get("note_generation_error"):
+                        st.session_state["note_generation_error"] = get_last_error()
             generated_note = st.session_state.get("note_generation_result")
             note_generation_error = st.session_state.get("note_generation_error", "")
             if generated_note and "action" in generated_note:

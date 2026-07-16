@@ -34,6 +34,10 @@ LENGTH_RANGES = {
     "700—1000字": (700, 1000),
 }
 
+IMAGE_NOTE_MIN_CHARS = 800
+IMAGE_NOTE_MAX_CHARS = 1000
+IMAGE_NOTE_TITLE_COUNT = 3
+
 _DIRECTION_STRUCTURES = {
     "自动判断": (
         "根据素材判断最强切入点，在场景、观点、方法、可信资料和自然引导之间灵活组织。",
@@ -266,7 +270,9 @@ def finalize_generated_note(
     max_body_chars: int,
     include_action: bool = True,
     include_tags: bool = True,
+    expected_title_count: int = 5,
 ) -> dict[str, Any]:
+    expected_title_count = max(1, min(int(expected_title_count), 5))
     raw_titles = [str(item).strip() for item in generated.get("titles", []) if str(item).strip()]
     title_reviews = review_title_candidates(raw_titles, rules)
     final_titles: list[str] = []
@@ -351,11 +357,11 @@ def finalize_generated_note(
         second_review_findings.extend(_risk_rows(tag_final, "标签"))
         modifications.extend(f"标签：{change}" for change in tag_changes)
 
-    final_titles = final_titles[:5]
+    final_titles = final_titles[:expected_title_count]
     safe_tags = safe_tags[:5]
     passed = (
         not second_review_findings
-        and len(final_titles) == 5
+        and len(final_titles) == expected_title_count
         and bool(safe_body)
         and len(safe_tags) == 5
     )
@@ -388,3 +394,27 @@ def finalize_generated_note(
         "passed_second_review": passed,
         "body_char_count": len(safe_body),
     }
+
+
+def validate_image_note_format(
+    generated: dict[str, Any],
+    min_chars: int = IMAGE_NOTE_MIN_CHARS,
+    max_chars: int = IMAGE_NOTE_MAX_CHARS,
+) -> list[str]:
+    body = str(generated.get("body", "")).strip()
+    issues: list[str] = []
+    if len(body) < min_chars:
+        issues.append(f"正文少于 {min_chars} 字")
+    if len(body) > max_chars:
+        issues.append(f"正文超过 {max_chars} 字")
+
+    emoji_markers = ("👇", "😭", "😣", "❌", "⚠️", "👩‍🏫", "✅", "⭐", "📌", "👉")
+    if not any(marker in body for marker in emoji_markers):
+        issues.append("正文缺少适量 emoji")
+    if not all(marker in body for marker in ("1️⃣", "2️⃣", "3️⃣")):
+        issues.append("正文缺少 1️⃣2️⃣3️⃣ 方法拆解")
+
+    paragraphs = [part.strip() for part in re.split(r"\n+", body) if part.strip()]
+    if any(len(paragraph) > 100 for paragraph in paragraphs):
+        issues.append("存在超过 100 字的长段落")
+    return issues

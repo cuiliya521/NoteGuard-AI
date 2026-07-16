@@ -31,8 +31,36 @@ class ViralExamplesTests(unittest.TestCase):
 
             self.assertEqual(
                 load_viral_examples(path),
-                [{"title": "初二数学怎么学", "content": "方法分享"}],
+                [
+                    {
+                        "title": "初二数学怎么学",
+                        "content": "方法分享",
+                        "category": "",
+                        "structure": "",
+                        "opening_style": "",
+                        "pain_points": "",
+                        "selling_points": "",
+                        "conversion_style": "",
+                    }
+                ],
             )
+
+    def test_extended_style_fields_are_preserved(self) -> None:
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "viral_examples.json"
+            record = {
+                "title": "初二数学总卡壳",
+                "content": "家长场景开头，再拆方法。",
+                "category": "精准筛选型",
+                "structure": "痛点→分析→方法→服务",
+                "opening_style": "目标用户+问题场景",
+                "pain_points": "陪学费力",
+                "selling_points": "线上陪练",
+                "conversion_style": "咨询学习规划",
+            }
+            path.write_text(json.dumps([record], ensure_ascii=False), encoding="utf-8")
+
+            self.assertEqual(load_viral_examples(path), [record])
 
     def test_corrupt_file_degrades_to_empty_examples(self) -> None:
         with TemporaryDirectory() as directory:
