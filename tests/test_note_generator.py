@@ -16,6 +16,7 @@ from services.note_generator import (
     build_image_source_context,
     build_generation_request_key,
     build_publish_version,
+    build_rule_constraints,
     can_generate_note,
     finalize_generated_note,
     get_structure_guidance,
@@ -135,6 +136,37 @@ class NoteGeneratorTests(unittest.TestCase):
 
         self.assertEqual(payload["source_materials"], source_materials)
         self.assertEqual(payload["creator_profile"], {"name": "刘老师"})
+
+    def test_image_generation_keeps_cover_analysis_and_active_rule_constraints(self) -> None:
+        cover_analysis = {"score": 82, "core_selling_point": "函数学习方法"}
+        context = build_image_source_context(
+            make_image(),
+            ocr_text="初二函数怎么学",
+            corrected_cover_text="",
+            cover_analysis=cover_analysis,
+        )
+        constraints = build_rule_constraints(self.rules)
+        context["rule_constraints"] = constraints
+        payload = build_note_generation_payload(
+            "初二函数",
+            creator_profile={"name": "刘老师"},
+            generation_options={"generation_mode": "根据图片生成"},
+            source_materials={
+                "ocr_text": context["ocr_text"],
+                "cover_analysis": context["cover_analysis"],
+                "rule_constraints": constraints,
+            },
+            risk_items=[],
+        )
+
+        self.assertEqual(context["cover_analysis"], cover_analysis)
+        self.assertEqual(payload["source_materials"]["cover_analysis"], cover_analysis)
+        self.assertTrue(payload["source_materials"]["rule_constraints"])
+        self.assertTrue(
+            all("term" in item and "severity" in item for item in constraints)
+        )
+        self.assertIn("rule_constraints", NOTE_GENERATION_PROMPT)
+        self.assertIn("rule_constraints", NOTE_IMAGE_ANALYSIS_PROMPT)
 
     def test_image_only_mode_can_generate_from_confirmed_ocr(self) -> None:
         context = build_image_source_context(

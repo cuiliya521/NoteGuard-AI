@@ -185,6 +185,7 @@ NOTE_GENERATION_PROMPT = """
 2. 用户修正后的封面文字优先于原始 OCR；不得臆测图片中未识别的信息。
 3. creator_profile 是唯一允许使用的身份、资历、科目、教学形式、时长、价格、案例和行动方式来源。
 4. 只有 generation_options 明确允许时，才把老师介绍、课程信息写入正文。
+5. source_materials.cover_analysis 和 source_materials.image_analysis 是图片分析结果；只能使用其中有素材依据的结论。
 
 真实性红线：
 1. creator_profile 未填写的经历、学员数量、家长反馈、教学成果、价格、案例和数据一律不得生成。
@@ -214,7 +215,7 @@ NOTE_GENERATION_PROMPT = """
 标题保留真实科目、年级、学习场景和家长问题，但不得出现保证提分、30天提高50分、一定有效、百分百、必然逆袭或虚构数据。
 
 合规要求：
-1. 参考输入中的 risk_items，避开现有规则风险表达。
+1. 同时参考 risk_items 和 source_materials.rule_constraints，避开当前启用规则中的风险表达。
 2. 不使用绝对化承诺、保证结果、虚假案例、违规引导和夸大宣传。
 3. “孩子”“数学”等普通教育词可自然使用，不要把普通词自行升级成严重风险。
 4. 标签与主题相关，使用 # 开头，生成恰好 5 个。
@@ -231,13 +232,14 @@ NOTE_GENERATION_PROMPT = """
 NOTE_IMAGE_ANALYSIS_PROMPT = """
 你是小红书教育赛道内容策划。请在生成完整笔记之前，先分析用户已确认的图片素材。
 
-你会收到 image_context、creator_profile 和 risk_items。
+你会收到 image_context、creator_profile、risk_items 和 rule_constraints。
 能力边界：
 1. 当前模型不直接接收图片像素，只能根据 OCR 文字、用户修正文字、图片尺寸比例和已有封面分析作出判断。
 2. visual_elements 只能列出已确认的文字元素、信息层级方向或尺寸比例特征；不得虚构人物、背景、颜色、表情和版式细节。
 3. target_audience、selling_direction 和 content_type 必须有输入文字依据。
 4. creator_profile 只能帮助理解用户已保存的真实定位，不得补造经历、案例、人数、成绩和效果数据。
 5. 参考 risk_items 标记可能需要在生成阶段规避的方向，不得引入成绩保证或短期效果承诺。
+6. rule_constraints 是当前 rules.json 中启用的审核规则，分析卖点方向时必须主动避开其中的风险表达。
 
 只输出合法 JSON：
 {
@@ -968,6 +970,7 @@ def analyze_note_image_source(
         "image_context": image_context,
         "creator_profile": build_creator_profile_context(creator_profile),
         "risk_items": normalize_risk_items(risk_items or []),
+        "rule_constraints": image_context.get("rule_constraints", []),
     }
     try:
         client = OpenAI(api_key=api_key, base_url=DEEPSEEK_BASE_URL)

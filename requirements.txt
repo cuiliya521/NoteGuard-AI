@@ -3,5 +3,7 @@ openai
 python-dotenv
 Pillow
 pytesseract
+paddlepaddle>=3.0,<4; python_version < "3.14"
+paddleocr>=3.3,<4; python_version < "3.14"
 streamlit-paste-button==0.1.2
 pytest

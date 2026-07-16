@@ -22,7 +22,7 @@ from services.creator_profile import (
     save_creator_profile,
 )
 from services.image_reviewer import ImageReviewResult, review_image
-from services.image_ocr import extract_text_with_status
+from services.image_ocr import extract_text_with_status, get_available_ocr_engine
 from services.image_input import (
     ImageInputError,
     normalize_image_input,
@@ -46,6 +46,7 @@ from services.note_generator import (
     LENGTH_RANGES,
     build_image_source_context,
     build_generation_request_key,
+    build_rule_constraints,
     can_generate_note,
     finalize_generated_note,
     get_structure_guidance,
@@ -1797,7 +1798,8 @@ def render_page_hero(title: str, subtitle: str, description: str) -> None:
 
 def ensure_cover_ocr(image_bytes: bytes) -> tuple[list[str], str]:
     image_key = hashlib.sha256(image_bytes).hexdigest()
-    if st.session_state.get("cover_ocr_attempt_key") != image_key:
+    attempt_key = f"{image_key}:{get_available_ocr_engine()}"
+    if st.session_state.get("cover_ocr_attempt_key") != attempt_key:
         for key in (
             "cover_analysis",
             "cover_analysis_error",
@@ -1811,7 +1813,7 @@ def ensure_cover_ocr(image_bytes: bytes) -> tuple[list[str], str]:
         st.session_state["image_text_input"] = ""
         st.session_state["draft_image_text"] = ""
         ocr_lines, ocr_error = extract_text_with_status(image_bytes)
-        st.session_state["cover_ocr_attempt_key"] = image_key
+        st.session_state["cover_ocr_attempt_key"] = attempt_key
         st.session_state["cover_ocr_lines"] = ocr_lines
         st.session_state["cover_ocr_error"] = ocr_error
         st.session_state["cover_ocr_status"] = "success" if ocr_lines else "failed"
@@ -2500,6 +2502,10 @@ def main() -> None:
     )
     findings: list[Finding] = []
     cover_analysis = None
+    if has_image:
+        active_image_key = hashlib.sha256(active_image_bytes).hexdigest()
+        if st.session_state.get("cover_analysis_image_key") == active_image_key:
+            cover_analysis = st.session_state.get("cover_analysis")
 
     if has_review:
         findings = check_text(title=title, body=body, rules=rules)
@@ -2717,6 +2723,9 @@ def main() -> None:
                 corrected_cover_text,
                 cover_analysis=cover_analysis,
             )
+            rule_constraints = build_rule_constraints(rules)
+            if image_context:
+                image_context["rule_constraints"] = rule_constraints
             if image_mode:
                 st.caption("主流程：图片内容分析 → 标题候选 → 1000字以内正文 → 规则二次审核。")
             else:
@@ -2827,6 +2836,7 @@ def main() -> None:
                                 "image_context": image_context,
                                 "creator_profile": creator_profile,
                                 "risk_terms": [item.term for item in source_findings],
+                                "rule_constraints": rule_constraints,
                             }
                         )
                         if (
@@ -2853,7 +2863,9 @@ def main() -> None:
                         "cover_image_hash": hashlib.sha256(image_bytes).hexdigest() if image_bytes else "",
                         "ocr_text": ocr_text.strip(),
                         "corrected_cover_text": corrected_cover_text,
+                        "cover_analysis": cover_analysis or {},
                         "image_analysis": image_analysis or {},
+                        "rule_constraints": rule_constraints,
                     }
                     structure_seed = "|".join(
                         [note_topic, title.strip(), body.strip()[:160], corrected_cover_text]

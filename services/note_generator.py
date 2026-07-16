@@ -80,6 +80,20 @@ def build_generation_request_key(payload: dict[str, Any]) -> str:
     return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
 
 
+def build_rule_constraints(rules: list[Rule]) -> list[dict[str, str]]:
+    return [
+        {
+            "term": rule.term,
+            "severity": rule.severity,
+            "category": rule.category,
+            "reason": rule.reason,
+            "suggestion": rule.suggestion,
+        }
+        for rule in rules
+        if rule.term.strip()
+    ]
+
+
 def build_image_source_context(
     image_bytes: bytes,
     ocr_text: str,
