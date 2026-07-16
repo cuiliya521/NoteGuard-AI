@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import hashlib
+from io import BytesIO
 import json
 import re
 from typing import Any
+
+from PIL import Image, UnidentifiedImageError
 
 from services.rewriter import review_title_candidates, rewrite_with_local_rules
 from services.rule_checker import Finding, Rule, check_text
@@ -17,6 +20,12 @@ CONTENT_DIRECTIONS = (
     "干货分享型",
     "案例复盘型",
     "家长共鸣型",
+)
+
+GENERATION_MODES = ("根据图片生成", "根据文字生成")
+IMAGE_GENERATION_STRUCTURE = (
+    "图片驱动模式必须按‘用户痛点 → 已确认的老师身份背书 → 课程/服务介绍 "
+    "→ 已确认的优势 → 自然行动引导’组织。创作者资料未确认的背书、案例和数据必须省略。"
 )
 
 LENGTH_RANGES = {
@@ -69,6 +78,61 @@ def get_structure_guidance(direction: str, seed: str) -> str:
 def build_generation_request_key(payload: dict[str, Any]) -> str:
     serialized = json.dumps(payload, ensure_ascii=False, sort_keys=True)
     return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
+
+
+def build_image_source_context(
+    image_bytes: bytes,
+    ocr_text: str,
+    corrected_cover_text: str,
+    cover_analysis: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    if not image_bytes:
+        return {}
+
+    image_format = ""
+    width = 0
+    height = 0
+    try:
+        with Image.open(BytesIO(image_bytes)) as image:
+            image_format = (image.format or "").upper()
+            width, height = image.size
+    except (UnidentifiedImageError, OSError, ValueError, Image.DecompressionBombError):
+        return {}
+
+    confirmed_text = (corrected_cover_text or "").strip() or (ocr_text or "").strip()
+    return {
+        "image_hash": hashlib.sha256(image_bytes).hexdigest(),
+        "image_format": image_format,
+        "width": width,
+        "height": height,
+        "aspect_ratio": round(width / height, 3) if height else 0,
+        "ocr_text": (ocr_text or "").strip(),
+        "confirmed_cover_text": confirmed_text,
+        "cover_analysis": cover_analysis or {},
+        "analysis_boundary": (
+            "当前不传输图片像素给模型；图片结论仅基于 OCR、用户修正文字、"
+            "尺寸比例和已有封面分析。"
+        ),
+    }
+
+
+def can_generate_note(
+    generation_mode: str,
+    topic: str,
+    title: str,
+    body: str,
+    image_context: dict[str, Any],
+) -> tuple[bool, str]:
+    if generation_mode == "根据图片生成":
+        if not image_context:
+            return False, "请先上传一张封面图片。"
+        if not str(image_context.get("confirmed_cover_text", "")).strip():
+            return False, "图片文字未识别成功，请在封面文字框中手动补充后再生成。"
+        return True, ""
+
+    if any((topic.strip(), title.strip(), body.strip())):
+        return True, ""
+    return False, "请先补充标题、正文或主题关键词。"
 
 
 def truncate_complete_text(text: str, max_chars: int = 1000) -> str:

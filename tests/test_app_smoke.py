@@ -23,11 +23,11 @@ class AppSmokeTests(unittest.TestCase):
             "handled",
         )
 
-        app.radio[0].set_value("封面诊断")
+        app.radio(key="workspace_page").set_value("封面诊断")
         app.run(timeout=30)
         self.assertEqual(len(app.exception), 0)
 
-        app.radio[0].set_value("创作工作台")
+        app.radio(key="workspace_page").set_value("创作工作台")
         app.run(timeout=30)
         self.assertEqual(app.text_input(key="title_input").value, title)
         self.assertEqual(app.text_area(key="body_input").value, body)

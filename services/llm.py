@@ -195,6 +195,12 @@ NOTE_GENERATION_PROMPT = """
 严格遵循 generation_options.content_direction 和 structure_guidance。不同方向必须使用明显不同的切入方式与段落结构。
 可参考家长痛点、老师身份与专业背书、教学理念、具体方法、课程服务、真实素材中的感受、形式时长价格和自然行动引导，但不要每次使用相同顺序。
 禁止固定使用“有个家长跟我说”等开头，禁止重复固定句式、固定表情或固定分隔符，不照抄任何示例。
+当 generation_options.generation_mode 为“根据图片生成”时：
+1. 先使用 source_materials.image_analysis 中的封面主题、目标人群、卖点方向和内容类型确定写作角度。
+2. 正文必须按“用户痛点 → 已确认的老师身份背书 → 课程/服务介绍 → 已确认的优势 → 行动引导”展开，不调换顺序。
+3. creator_profile 中没有的老师身份或背书必须省略，不得为了补齐结构而虚构。
+4. 图片中无法从 OCR 或已确认资料证实的人物、场景、案例和效果不得写入文案。
+5. 不得生成成绩保证、短期效果承诺或任何未经用户确认的转化数据。
 
 正文要求：
 1. 正文目标字数遵循 generation_options.length_range，且绝对不超过 1000 字。
@@ -219,6 +225,28 @@ NOTE_GENERATION_PROMPT = """
   "body": "完整正文",
   "action": "简短行动引导",
   "tags": ["#标签1", "#标签2", "#标签3", "#标签4", "#标签5"]
+}
+""".strip()
+
+NOTE_IMAGE_ANALYSIS_PROMPT = """
+你是小红书教育赛道内容策划。请在生成完整笔记之前，先分析用户已确认的图片素材。
+
+你会收到 image_context、creator_profile 和 risk_items。
+能力边界：
+1. 当前模型不直接接收图片像素，只能根据 OCR 文字、用户修正文字、图片尺寸比例和已有封面分析作出判断。
+2. visual_elements 只能列出已确认的文字元素、信息层级方向或尺寸比例特征；不得虚构人物、背景、颜色、表情和版式细节。
+3. target_audience、selling_direction 和 content_type 必须有输入文字依据。
+4. creator_profile 只能帮助理解用户已保存的真实定位，不得补造经历、案例、人数、成绩和效果数据。
+5. 参考 risk_items 标记可能需要在生成阶段规避的方向，不得引入成绩保证或短期效果承诺。
+
+只输出合法 JSON：
+{
+  "cover_theme": "",
+  "visual_elements": [""],
+  "target_audience": "",
+  "selling_direction": "",
+  "content_type": "",
+  "analysis_basis": ""
 }
 """.strip()
 
@@ -507,6 +535,38 @@ def parse_note_generation_response(content: str) -> dict[str, Any] | None:
         "action": action,
         "tags": tags,
     }
+
+
+def parse_note_image_analysis_response(content: str) -> dict[str, Any] | None:
+    cleaned_content = content.strip()
+    if cleaned_content.startswith("```"):
+        cleaned_content = cleaned_content.strip("`").strip()
+        if cleaned_content.startswith("json"):
+            cleaned_content = cleaned_content[4:].strip()
+    try:
+        parsed = json.loads(cleaned_content)
+    except json.JSONDecodeError as error:
+        set_last_error(f"DeepSeek 图片素材分析不是合法 JSON：{error.msg}")
+        return None
+    if not isinstance(parsed, dict):
+        set_last_error("DeepSeek 图片素材分析结果不是对象")
+        return None
+
+    visual_elements = parsed.get("visual_elements", [])
+    if not isinstance(visual_elements, list):
+        visual_elements = []
+    result = {
+        "cover_theme": str(parsed.get("cover_theme", "")).strip(),
+        "visual_elements": [str(item).strip() for item in visual_elements if str(item).strip()],
+        "target_audience": str(parsed.get("target_audience", "")).strip(),
+        "selling_direction": str(parsed.get("selling_direction", "")).strip(),
+        "content_type": str(parsed.get("content_type", "")).strip(),
+        "analysis_basis": str(parsed.get("analysis_basis", "")).strip(),
+    }
+    if not all(result[key] for key in ("cover_theme", "target_audience", "selling_direction", "content_type")):
+        set_last_error("DeepSeek 图片素材分析结果不完整")
+        return None
+    return result
 
 
 def build_note_generation_payload(
@@ -882,6 +942,45 @@ def generate_xiaohongshu_note(
         )
         content = response.choices[0].message.content or ""
         return parse_note_generation_response(content)
+    except Exception as error:
+        set_last_error(f"{type(error).__name__}: {error}")
+        return None
+
+
+def analyze_note_image_source(
+    image_context: dict[str, Any],
+    creator_profile: dict[str, str] | None = None,
+    risk_items: list[Any] | None = None,
+) -> dict[str, Any] | None:
+    set_last_error("")
+    api_key = get_deepseek_api_key()
+    print_deepseek_diagnostics(api_key)
+    if not api_key:
+        set_last_error(f"未读取到 DEEPSEEK_API_KEY，请检查 {ENV_PATH}")
+        return None
+    try:
+        from openai import OpenAI
+    except ModuleNotFoundError:
+        set_last_error("未安装 openai 依赖，请先安装 requirements.txt")
+        return None
+
+    payload = {
+        "image_context": image_context,
+        "creator_profile": build_creator_profile_context(creator_profile),
+        "risk_items": normalize_risk_items(risk_items or []),
+    }
+    try:
+        client = OpenAI(api_key=api_key, base_url=DEEPSEEK_BASE_URL)
+        response = client.chat.completions.create(
+            model=DEEPSEEK_MODEL,
+            messages=[
+                {"role": "system", "content": NOTE_IMAGE_ANALYSIS_PROMPT},
+                {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
+            ],
+            temperature=0.3,
+        )
+        content = response.choices[0].message.content or ""
+        return parse_note_image_analysis_response(content)
     except Exception as error:
         set_last_error(f"{type(error).__name__}: {error}")
         return None

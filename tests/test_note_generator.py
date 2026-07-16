@@ -1,10 +1,22 @@
+from io import BytesIO
 from pathlib import Path
 import unittest
 
-from services.llm import NOTE_GENERATION_PROMPT, build_note_generation_payload
+from PIL import Image
+
+from services.llm import (
+    NOTE_GENERATION_PROMPT,
+    NOTE_IMAGE_ANALYSIS_PROMPT,
+    build_note_generation_payload,
+    parse_note_image_analysis_response,
+)
 from services.note_generator import (
+    GENERATION_MODES,
+    IMAGE_GENERATION_STRUCTURE,
+    build_image_source_context,
     build_generation_request_key,
     build_publish_version,
+    can_generate_note,
     finalize_generated_note,
     get_structure_guidance,
     truncate_complete_text,
@@ -28,6 +40,12 @@ def generated_note(body: str = "数学基础薄弱时，可以先梳理解题步
         "action": "可以结合实际学习情况逐步调整。",
         "tags": ["#数学", "#学习方法", "#家庭教育", "#学习规划", "#教育分享"],
     }
+
+
+def make_image() -> bytes:
+    output = BytesIO()
+    Image.new("RGB", (1080, 1440), "white").save(output, format="PNG")
+    return output.getvalue()
 
 
 class NoteGeneratorTests(unittest.TestCase):
@@ -117,6 +135,68 @@ class NoteGeneratorTests(unittest.TestCase):
 
         self.assertEqual(payload["source_materials"], source_materials)
         self.assertEqual(payload["creator_profile"], {"name": "刘老师"})
+
+    def test_image_only_mode_can_generate_from_confirmed_ocr(self) -> None:
+        context = build_image_source_context(
+            make_image(),
+            ocr_text="初二数学函数怎么学",
+            corrected_cover_text="",
+        )
+
+        allowed, error = can_generate_note(
+            "根据图片生成",
+            topic="",
+            title="",
+            body="",
+            image_context=context,
+        )
+
+        self.assertTrue(allowed)
+        self.assertEqual(error, "")
+        self.assertEqual(context["width"], 1080)
+        self.assertEqual(context["height"], 1440)
+        self.assertEqual(context["confirmed_cover_text"], "初二数学函数怎么学")
+        self.assertEqual(GENERATION_MODES[0], "根据图片生成")
+
+    def test_image_mode_requires_image_and_confirmed_text(self) -> None:
+        missing_image = can_generate_note("根据图片生成", "", "", "", {})
+        no_text_context = build_image_source_context(make_image(), "", "")
+        missing_text = can_generate_note(
+            "根据图片生成", "", "", "", no_text_context
+        )
+
+        self.assertFalse(missing_image[0])
+        self.assertIn("上传", missing_image[1])
+        self.assertFalse(missing_text[0])
+        self.assertIn("手动补充", missing_text[1])
+
+    def test_image_analysis_parser_and_prompt_do_not_invent_visual_facts(self) -> None:
+        parsed = parse_note_image_analysis_response(
+            '{"cover_theme":"函数学习","visual_elements":["封面主标题"],'
+            '"target_audience":"初二家长","selling_direction":"学习方法",'
+            '"content_type":"干货分享","analysis_basis":"基于OCR"}'
+        )
+
+        self.assertEqual(parsed["cover_theme"], "函数学习")
+        self.assertIn("不得虚构人物", NOTE_IMAGE_ANALYSIS_PROMPT)
+        self.assertIn("用户痛点", IMAGE_GENERATION_STRUCTURE)
+
+    def test_image_generation_payload_only_uses_saved_profile_fields(self) -> None:
+        image_analysis = {
+            "cover_theme": "函数学习",
+            "target_audience": "初二家长",
+        }
+        payload = build_note_generation_payload(
+            "",
+            creator_profile={"name": "刘老师", "unknown_claim": "带过万名学员"},
+            generation_options={"generation_mode": "根据图片生成"},
+            source_materials={"image_analysis": image_analysis},
+            risk_items=[],
+        )
+
+        self.assertEqual(payload["creator_profile"], {"name": "刘老师"})
+        self.assertEqual(payload["source_materials"]["image_analysis"], image_analysis)
+        self.assertIn("成绩保证", NOTE_GENERATION_PROMPT)
 
     def test_publish_version_format_is_title_body_and_tags(self) -> None:
         published = build_publish_version(

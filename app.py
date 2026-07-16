@@ -41,13 +41,18 @@ from services.link_importer import (
 )
 from services.note_generator import (
     CONTENT_DIRECTIONS,
+    GENERATION_MODES,
+    IMAGE_GENERATION_STRUCTURE,
     LENGTH_RANGES,
+    build_image_source_context,
     build_generation_request_key,
+    can_generate_note,
     finalize_generated_note,
     get_structure_guidance,
 )
 from services.llm import (
     analyze_cover,
+    analyze_note_image_source,
     analyze_viral_image,
     analyze_viral_note,
     generate_pre_publish_report,
@@ -310,25 +315,6 @@ def render_styles() -> None:
             --ng-success: #22c55e;
             --ng-warning: #f59e0b;
             --ng-danger: #ef4444;
-        }
-        html, body, .stApp {
-            font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont,
-                "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
-        }
-        .stApp button,
-        .stApp input,
-        .stApp textarea,
-        .stApp select {
-            font-family: inherit;
-        }
-        .material-symbols-rounded,
-        [data-testid="stIconMaterial"] {
-            font-family: "Material Symbols Rounded" !important;
-            font-weight: normal !important;
-            font-style: normal !important;
-            line-height: 1 !important;
-            letter-spacing: normal !important;
-            white-space: nowrap !important;
         }
         .stApp {
             background: var(--ng-canvas);
@@ -599,8 +585,7 @@ def render_styles() -> None:
         }
         [data-testid="stTextInput"] label,
         [data-testid="stTextArea"] label,
-        [data-testid="stSelectbox"] label,
-        [data-testid="stFileUploader"] label {
+        [data-testid="stSelectbox"] label {
             color: #344054;
             font-size: 14px;
             font-weight: 600;
@@ -612,29 +597,6 @@ def render_styles() -> None:
         textarea::placeholder, input::placeholder {
             color: var(--ng-subtle) !important;
             opacity: 1 !important;
-        }
-        [data-testid="stFileUploaderDropzone"] {
-            min-height: 112px;
-            padding: 16px;
-            border: 1px dashed #d0d5dd;
-            border-radius: 12px;
-            background: #fcfcfd;
-        }
-        [data-testid="stFileUploaderDropzone"] > div {
-            min-width: 0;
-            gap: 12px;
-        }
-        [data-testid="stFileUploaderDropzoneInstructions"] {
-            min-width: 0;
-            line-height: 1.45;
-        }
-        [data-testid="stFileUploaderDropzone"] button {
-            flex: 0 0 auto;
-            white-space: nowrap;
-        }
-        [data-testid="stFileUploaderDropzone"]:hover {
-            border-color: #e5a1aa;
-            background: #fffafb;
         }
         button {
             letter-spacing: 0 !important;
@@ -713,17 +675,24 @@ def render_styles() -> None:
             background: #ffffff;
         }
         [data-testid="stExpander"] summary {
-            min-height: 46px;
+            display: flex;
+            min-height: 48px;
+            padding: 0.7rem 1rem;
             align-items: center;
+            line-height: 1.5;
+        }
+        [data-testid="stExpander"] summary p {
+            margin: 0;
+            line-height: 1.5;
+            overflow-wrap: anywhere;
+        }
+        [data-testid="stExpander"] summary svg,
+        [data-testid="stExpander"] summary [data-testid="stIconMaterial"] {
+            flex: 0 0 auto;
         }
         [data-testid="stExpanderDetails"] {
-            padding-top: 0.35rem;
-            padding-bottom: 0.75rem;
-        }
-        details {
-            border-color: var(--ng-border) !important;
-            border-radius: 10px !important;
-            background: #ffffff;
+            padding: 0.4rem 1rem 0.9rem;
+            line-height: 1.65;
         }
         [data-testid="stHorizontalBlock"] {
             align-items: flex-start;
@@ -801,10 +770,6 @@ def render_styles() -> None:
             }
             div[data-testid="stVerticalBlockBorderWrapper"] > div {
                 padding: 0.7rem 0.75rem;
-            }
-            [data-testid="stFileUploaderDropzone"] {
-                min-height: 104px;
-                padding: 12px;
             }
         }
         </style>
@@ -1233,6 +1198,24 @@ def render_title_candidate_reviews(reviews: list[TitleCandidateReview]) -> None:
 
 def request_note_regeneration() -> None:
     st.session_state["note_regenerate_requested"] = True
+
+
+def render_note_image_analysis(analysis: dict | None) -> None:
+    if not analysis:
+        return
+    with st.expander("查看图片内容分析", expanded=True):
+        st.write(f"封面主题：{analysis['cover_theme']}")
+        st.write(f"目标人群：{analysis['target_audience']}")
+        st.write(f"卖点方向：{analysis['selling_direction']}")
+        st.write(f"内容类型：{analysis['content_type']}")
+        if analysis.get("visual_elements"):
+            st.write("已确认的视觉/文字元素：")
+            for item in analysis["visual_elements"]:
+                st.write(f"- {item}")
+        st.caption(
+            analysis.get("analysis_basis")
+            or "分析基于 OCR、用户修正文字、图片尺寸和已有封面分析。"
+        )
 
 
 def render_generated_note(note: dict) -> None:
@@ -2364,6 +2347,7 @@ def main() -> None:
             list(navigation_descriptions),
             format_func=lambda page: f"{navigation_icons[page]}  {page}",
             label_visibility="collapsed",
+            key="workspace_page",
         )
         st.markdown(
             f'<div class="sidebar-note">{escape(navigation_descriptions[workspace_page])}</div>',
@@ -2514,6 +2498,8 @@ def main() -> None:
     has_review = st.session_state["review_started"] and bool(
         title.strip() or body.strip() or has_image
     )
+    findings: list[Finding] = []
+    cover_analysis = None
 
     if has_review:
         findings = check_text(title=title, body=body, rules=rules)
@@ -2563,7 +2549,6 @@ def main() -> None:
             }
         line_review_statuses = st.session_state.get("line_review_statuses", {})
 
-        cover_analysis = None
         cover_analysis_error = ""
         cover_ocr_lines: list[str] = st.session_state.get("cover_ocr_lines", [])
         if has_image:
@@ -2642,7 +2627,7 @@ def main() -> None:
     with st.container(border=True):
         st.markdown('<div class="module-eyebrow">③ AI优化</div>', unsafe_allow_html=True)
         st.markdown('<div class="module-title">让内容更适合发布</div>', unsafe_allow_html=True)
-        rewrite_tab, title_tab, note_tab = st.tabs(["安全改写", "标题生成", "图文文案生成"])
+        rewrite_tab, title_tab, note_tab = st.tabs(["安全改写", "标题生成", "图片驱动生成"])
         with rewrite_tab:
             if not has_review:
                 st.info("完成审核后，可在这里生成安全版文案。")
@@ -2715,41 +2700,77 @@ def main() -> None:
         with note_tab:
             if "note_generation_topic" not in st.session_state:
                 st.session_state["note_generation_topic"] = st.session_state.get("draft_title", "")
-            st.caption("根据当前标题、正文、封面文字和创作者资料，生成适合发布的标题与完整文案。")
+            st.caption("上传图片后，先分析图片内容，再结合已确认的创作者资料和审核规则生成笔记。")
+            generation_mode = st.radio(
+                "生成来源",
+                GENERATION_MODES,
+                horizontal=True,
+                key="note_generation_mode",
+            )
+            image_mode = generation_mode == "根据图片生成"
+            image_bytes = get_current_image_bytes()
+            ocr_text = "\n".join(st.session_state.get("cover_ocr_lines", []))
+            corrected_cover_text = st.session_state.get("draft_image_text", "").strip()
+            image_context = build_image_source_context(
+                image_bytes,
+                ocr_text,
+                corrected_cover_text,
+                cover_analysis=cover_analysis,
+            )
+            if image_mode:
+                st.caption("主流程：图片内容分析 → 标题候选 → 1000字以内正文 → 规则二次审核。")
+            else:
+                st.caption("备用模式：使用当前标题、正文或主题关键词生成。")
             topic = st.text_input(
                 "主题/关键词（可选）",
-                placeholder="可补充一个更具体的主题；留空时自动使用当前素材",
+                placeholder="可补充主题；图片模式可留空",
                 key="note_generation_topic",
             )
             option_left, option_right = st.columns(2)
             with option_left:
-                content_direction = st.selectbox(
-                    "内容方向",
-                    CONTENT_DIRECTIONS,
-                    key="note_content_direction",
-                )
+                if image_mode:
+                    content_direction = "图片驱动固定结构"
+                    st.info("固定结构：用户痛点 → 老师背书 → 课程/服务 → 优势 → 行动引导")
+                else:
+                    content_direction = st.selectbox(
+                        "内容方向",
+                        CONTENT_DIRECTIONS,
+                        key="note_content_direction",
+                    )
                 length_range = st.selectbox(
                     "字数范围",
                     list(LENGTH_RANGES),
                     index=1,
                     key="note_length_range",
                 )
-                include_intro = st.checkbox("加入老师介绍", key="note_include_intro")
-                include_service = st.checkbox("加入课程信息", key="note_include_service")
+                if image_mode:
+                    include_intro = any(
+                        creator_profile.get(field, "").strip()
+                        for field in ("name", "subjects", "personal_experience")
+                    )
+                    include_service = any(
+                        creator_profile.get(field, "").strip()
+                        for field in ("teaching_format", "session_duration", "pricing", "teaching_features")
+                    )
+                    st.caption("老师背书和课程信息仅在创作者资料已保存时加入。")
+                else:
+                    include_intro = st.checkbox("加入老师介绍", key="note_include_intro")
+                    include_service = st.checkbox("加入课程信息", key="note_include_service")
             with option_right:
-                include_action = st.checkbox(
-                    "加入行动引导",
-                    value=True,
-                    key="note_include_action",
-                )
+                if image_mode:
+                    include_action = True
+                    st.caption("图片模式默认生成自然行动引导。")
+                else:
+                    include_action = st.checkbox(
+                        "加入行动引导",
+                        value=True,
+                        key="note_include_action",
+                    )
                 include_tags = st.checkbox(
                     "加入标签",
                     value=True,
                     key="note_include_tags",
                 )
-                image_bytes = get_current_image_bytes()
-                ocr_text = "\n".join(st.session_state.get("cover_ocr_lines", []))
-                corrected_cover_text = st.session_state.get("draft_image_text", "").strip()
                 available_materials = [
                     label
                     for label, available in (
@@ -2767,30 +2788,78 @@ def main() -> None:
                 )
 
             generate_requested = st.button(
-                "生成标题和文案",
+                "根据图片生成笔记" if image_mode else "根据文字生成笔记",
                 type="primary",
                 use_container_width=True,
                 key="note_generation_button",
             )
             regenerate_requested = st.session_state.pop("note_regenerate_requested", False)
             if generate_requested or regenerate_requested:
-                note_topic = topic.strip() or title.strip() or corrected_cover_text
-                if not any((note_topic, body.strip(), ocr_text.strip())):
-                    st.warning("请先补充标题、正文、封面文字或主题关键词。")
+                can_generate, generation_error = can_generate_note(
+                    generation_mode,
+                    topic,
+                    title,
+                    body,
+                    image_context,
+                )
+                if not can_generate:
+                    st.warning(generation_error)
                 else:
+                    confirmed_image_text = str(image_context.get("confirmed_cover_text", "")).strip()
+                    note_topic = (
+                        topic.strip()
+                        or (confirmed_image_text.splitlines()[0] if confirmed_image_text else "")
+                        or title.strip()
+                    )
                     min_chars, max_chars = LENGTH_RANGES[length_range]
+                    source_title = "" if image_mode else title.strip()
+                    source_body = "" if image_mode else body.strip()
+                    source_findings = list(findings)
+                    if image_mode:
+                        source_findings = check_text("", confirmed_image_text, rules)
+
+                    image_analysis = None
+                    image_analysis_error = ""
+                    image_analysis_key = ""
+                    if image_mode:
+                        image_analysis_key = build_generation_request_key(
+                            {
+                                "image_context": image_context,
+                                "creator_profile": creator_profile,
+                                "risk_terms": [item.term for item in source_findings],
+                            }
+                        )
+                        if (
+                            st.session_state.get("note_image_analysis_key") == image_analysis_key
+                            and st.session_state.get("note_image_analysis")
+                        ):
+                            image_analysis = st.session_state.get("note_image_analysis")
+                        else:
+                            with st.spinner("正在进行图片内容分析..."):
+                                image_analysis = analyze_note_image_source(
+                                    image_context,
+                                    creator_profile=creator_profile,
+                                    risk_items=source_findings,
+                                )
+                            st.session_state["note_image_analysis_key"] = image_analysis_key
+                            st.session_state["note_image_analysis"] = image_analysis
+                        if not image_analysis:
+                            image_analysis_error = get_last_error() or "图片素材分析失败，请稍后重试。"
+
                     source_materials = {
-                        "current_title": title.strip(),
-                        "current_body": body.strip(),
+                        "current_title": source_title,
+                        "current_body": source_body,
                         "has_cover_image": bool(image_bytes),
                         "cover_image_hash": hashlib.sha256(image_bytes).hexdigest() if image_bytes else "",
                         "ocr_text": ocr_text.strip(),
                         "corrected_cover_text": corrected_cover_text,
+                        "image_analysis": image_analysis or {},
                     }
                     structure_seed = "|".join(
                         [note_topic, title.strip(), body.strip()[:160], corrected_cover_text]
                     )
                     generation_options = {
+                        "generation_mode": generation_mode,
                         "content_direction": content_direction,
                         "length_range": length_range,
                         "min_chars": min_chars,
@@ -2800,51 +2869,61 @@ def main() -> None:
                         "include_action": include_action,
                         "include_tags": include_tags,
                         "structure_guidance": get_structure_guidance(
-                            content_direction,
-                            structure_seed,
+                            content_direction, structure_seed
                         ),
                     }
+                    if image_mode:
+                        generation_options["structure_guidance"] = IMAGE_GENERATION_STRUCTURE
                     request_payload = {
                         "topic": note_topic,
                         "source_materials": source_materials,
                         "creator_profile": creator_profile,
                         "generation_options": generation_options,
-                        "risk_terms": [item.term for item in findings],
+                        "risk_terms": [item.term for item in source_findings],
                     }
                     request_key = build_generation_request_key(request_payload)
-                    with st.spinner("正在根据当前图文素材生成标题和文案..."):
-                        raw_note = generate_xiaohongshu_note(
-                            note_topic,
-                            creator_profile=creator_profile,
-                            generation_options=generation_options,
-                            source_materials=source_materials,
-                            risk_items=findings,
-                        )
-                        note_result = (
-                            finalize_generated_note(
-                                raw_note,
-                                rules,
-                                max_body_chars=max_chars,
-                                include_action=include_action,
-                                include_tags=include_tags,
+                    note_result = None
+                    if image_analysis_error:
+                        st.session_state["note_generation_error"] = image_analysis_error
+                    else:
+                        with st.spinner("正在根据当前图文素材生成标题和文案..."):
+                            raw_note = generate_xiaohongshu_note(
+                                note_topic,
+                                creator_profile=creator_profile,
+                                generation_options=generation_options,
+                                source_materials=source_materials,
+                                risk_items=source_findings,
                             )
-                            if raw_note
-                            else None
-                        )
+                            note_result = (
+                                finalize_generated_note(
+                                    raw_note,
+                                    rules,
+                                    max_body_chars=max_chars,
+                                    include_action=include_action,
+                                    include_tags=include_tags,
+                                )
+                                if raw_note
+                                else None
+                            )
                     if note_result:
                         note_result["request_key"] = request_key
+                        note_result["generation_mode"] = generation_mode
+                        note_result["image_analysis"] = image_analysis
                         st.session_state["note_generation_key"] = request_key
                     st.session_state["note_generation_result"] = note_result
-                    st.session_state["note_generation_error"] = "" if note_result else get_last_error()
+                    if not image_analysis_error:
+                        st.session_state["note_generation_error"] = "" if note_result else get_last_error()
             generated_note = st.session_state.get("note_generation_result")
             note_generation_error = st.session_state.get("note_generation_error", "")
             if generated_note and "action" in generated_note:
+                if generated_note.get("generation_mode") == "根据图片生成":
+                    render_note_image_analysis(generated_note.get("image_analysis"))
                 render_generated_note(generated_note)
             elif generated_note:
                 st.session_state.pop("note_generation_result", None)
-                st.info("图文文案生成已升级，请点击“生成标题和文案”创建新版本。")
+                st.info("图片驱动生成已升级，请重新生成新版本。")
             elif note_generation_error:
-                st.warning(f"图文文案生成失败：{note_generation_error}")
+                st.warning(f"图片驱动生成失败：{note_generation_error}")
 
     with st.container(border=True):
         st.markdown('<div class="module-eyebrow">④ 发布检查</div>', unsafe_allow_html=True)
