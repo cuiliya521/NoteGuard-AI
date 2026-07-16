@@ -2444,7 +2444,7 @@ def main() -> None:
                     unsafe_allow_html=True,
                 )
 
-    rules = get_rules()
+rules = get_rules()
 try:
     creator_profile = load_creator_profile(
         CREATOR_PROFILE_PATH,
@@ -2455,21 +2455,47 @@ except Exception:
 
 if workspace_page == "规则管理":
     render_rule_management()
-    return  
- if workspace_page == "封面诊断":
-        render_cover_diagnosis_page(rules, creator_profile)
-        return
-    if workspace_page == "爆款拆解":
-        render_viral_workspace(rules)
-        return
-    if workspace_page == "历史记录":
-        render_page_hero("历史记录", "查看过去的审核与生成结果", "最近 10 条记录保存在本地，可按已有结果类型筛选和展开查看。")
-        render_history_section()
-        return
-    if workspace_page == "创作者资料":
-        render_creator_profile_page(creator_profile)
-        return
+    return
 
+if workspace_page == "封面诊断":
+    render_cover_diagnosis_page(rules, creator_profile)
+    return
+
+if workspace_page == "爆款拆解":
+    render_viral_workspace(rules)
+    return
+
+if workspace_page == "历史记录":
+    render_page_hero("历史记录", "查看过去的审核与生成结果", "最近 10 条记录保存在本地，可按已有结果类型筛选和展开查看。")
+    render_history_section()
+    return
+
+if workspace_page == "创作者资料":
+    render_creator_profile_page(creator_profile)
+    return
+except Exception:
+    creator_profile = load_creator_profile(DEMO_CREATOR_PROFILE_PATH)
+
+if workspace_page == "规则管理":
+    render_rule_management()
+    return
+
+if workspace_page == "封面诊断":
+    render_cover_diagnosis_page(rules, creator_profile)
+    return
+
+if workspace_page == "爆款拆解":
+    render_viral_workspace(rules)
+    return
+
+if workspace_page == "历史记录":
+    render_page_hero("历史记录", "查看过去的审核与生成结果", "最近 10 条记录保存在本地，可按已有结果类型筛选和展开查看。")
+    render_history_section()
+    return
+
+if workspace_page == "创作者资料":
+    render_creator_profile_page(creator_profile)
+    return
     render_page_hero(
         "NoteGuard AI",
         "教育内容智能审核与优化助手",
