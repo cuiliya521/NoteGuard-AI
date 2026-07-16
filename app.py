@@ -28,7 +28,12 @@ from services.image_input import (
     normalize_image_input,
     store_image_payload,
 )
-from services.clipboard_image import extract_pasted_image, load_paste_image_button
+from services.clipboard_image import (
+    PASTE_UNAVAILABLE_MESSAGE,
+    extract_pasted_image,
+    load_paste_image_button,
+    log_paste_component_error,
+)
 from services.link_importer import (
     LinkImportError,
     download_public_image,
@@ -51,10 +56,12 @@ from services.llm import (
     get_last_error,
 )
 from services.rewriter import (
+    FormatPreservingChange,
     LineReviewItem,
     RewriteChange,
     TitleCandidateReview,
     build_rewrite_changes,
+    build_format_preserving_changes,
     build_line_review_items,
     build_rewrite_status_note,
     build_supplier_feedback,
@@ -304,9 +311,24 @@ def render_styles() -> None:
             --ng-warning: #f59e0b;
             --ng-danger: #ef4444;
         }
-        html, body, [class*="st-"] {
+        html, body, .stApp {
             font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont,
                 "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+        }
+        .stApp button,
+        .stApp input,
+        .stApp textarea,
+        .stApp select {
+            font-family: inherit;
+        }
+        .material-symbols-rounded,
+        [data-testid="stIconMaterial"] {
+            font-family: "Material Symbols Rounded" !important;
+            font-weight: normal !important;
+            font-style: normal !important;
+            line-height: 1 !important;
+            letter-spacing: normal !important;
+            white-space: nowrap !important;
         }
         .stApp {
             background: var(--ng-canvas);
@@ -454,7 +476,7 @@ def render_styles() -> None:
             box-shadow: 0 1px 2px rgba(16, 24, 40, 0.025);
         }
         div[data-testid="stVerticalBlockBorderWrapper"] > div {
-            padding: 0.35rem 0.45rem;
+            padding: 0.85rem 1rem;
         }
         .module-eyebrow {
             color: #b03644;
@@ -593,9 +615,22 @@ def render_styles() -> None:
         }
         [data-testid="stFileUploaderDropzone"] {
             min-height: 112px;
+            padding: 16px;
             border: 1px dashed #d0d5dd;
             border-radius: 12px;
             background: #fcfcfd;
+        }
+        [data-testid="stFileUploaderDropzone"] > div {
+            min-width: 0;
+            gap: 12px;
+        }
+        [data-testid="stFileUploaderDropzoneInstructions"] {
+            min-width: 0;
+            line-height: 1.45;
+        }
+        [data-testid="stFileUploaderDropzone"] button {
+            flex: 0 0 auto;
+            white-space: nowrap;
         }
         [data-testid="stFileUploaderDropzone"]:hover {
             border-color: #e5a1aa;
@@ -673,15 +708,32 @@ def render_styles() -> None:
             border-radius: 10px;
         }
         [data-testid="stExpander"] {
-            overflow: hidden;
             border: 1px solid var(--ng-border);
             border-radius: 10px;
             background: #ffffff;
+        }
+        [data-testid="stExpander"] summary {
+            min-height: 46px;
+            align-items: center;
+        }
+        [data-testid="stExpanderDetails"] {
+            padding-top: 0.35rem;
+            padding-bottom: 0.75rem;
         }
         details {
             border-color: var(--ng-border) !important;
             border-radius: 10px !important;
             background: #ffffff;
+        }
+        [data-testid="stHorizontalBlock"] {
+            align-items: flex-start;
+        }
+        [data-testid="column"] {
+            min-width: 0;
+        }
+        [data-testid="stMarkdownContainer"] {
+            min-width: 0;
+            overflow-wrap: anywhere;
         }
         p, li {
             line-height: 1.65;
@@ -689,6 +741,8 @@ def render_styles() -> None:
         h1, h2, h3, h4 {
             color: var(--ng-text);
             letter-spacing: 0;
+            line-height: 1.35;
+            overflow-wrap: anywhere;
         }
         h3 {
             font-size: 22px;
@@ -699,6 +753,17 @@ def render_styles() -> None:
         [data-testid="stCaptionContainer"] {
             color: var(--ng-muted);
             font-size: 13px;
+            line-height: 1.55;
+        }
+        .st-key-pre_publish_report [data-testid="stVerticalBlock"] {
+            gap: 0.8rem;
+        }
+        .st-key-pre_publish_report [data-testid="stMarkdownContainer"] p {
+            margin: 0.15rem 0 0.45rem;
+            line-height: 1.7;
+        }
+        .st-key-pre_publish_report [data-testid="stMetric"] {
+            margin-bottom: 0.25rem;
         }
         @media (max-width: 1024px) {
             .block-container {
@@ -733,6 +798,13 @@ def render_styles() -> None:
             }
             [data-testid="stMetric"] {
                 min-height: 80px;
+            }
+            div[data-testid="stVerticalBlockBorderWrapper"] > div {
+                padding: 0.7rem 0.75rem;
+            }
+            [data-testid="stFileUploaderDropzone"] {
+                min-height: 104px;
+                padding: 12px;
             }
         }
         </style>
@@ -1004,6 +1076,19 @@ def render_rewrite_changes(
         unsafe_allow_html=True,
     )
     render_change_reasons(body_changes, "正文未发生规则替换。")
+
+
+def render_format_preserving_changes(changes: list[FormatPreservingChange]) -> None:
+    st.markdown("#### 修改前后对比")
+    if not changes:
+        st.caption("未发生文本修改。")
+        return
+
+    for change in changes:
+        with st.container(border=True):
+            st.caption(change.location)
+            st.markdown(f"**原句：** {escape(change.original)}")
+            st.markdown(f"**修改后：** {escape(change.replacement)}")
 
 
 def render_image_review(image_review: ImageReviewResult, has_image: bool) -> None:
@@ -1392,6 +1477,11 @@ def render_viral_note_analysis(
 
 
 def render_pre_publish_report(report: dict) -> None:
+    with st.container(key="pre_publish_report"):
+        _render_pre_publish_report_content(report)
+
+
+def _render_pre_publish_report_content(report: dict) -> None:
     st.metric("① 综合评分", f"{report['score']}/100")
 
     st.markdown("**② 标题分析**")
@@ -1861,8 +1951,9 @@ def render_cover_diagnosis_page(rules: list[Rule]) -> None:
                         st.success("图片已粘贴，可继续识别和分析。")
                 else:
                     st.caption(paste_message)
-            except Exception:
-                st.warning("粘贴图片组件暂时无法加载，请继续使用文件上传。")
+            except Exception as error:
+                log_paste_component_error(error, "cover diagnosis")
+                st.warning(PASTE_UNAVAILABLE_MESSAGE)
         st.caption("系统仅处理你主动粘贴的图片，不读取剪贴板中的其他内容。")
 
     image_input_error = st.session_state.get("image_input_error", "")
@@ -2031,8 +2122,9 @@ def render_viral_image_input_controls(prefix: str) -> None:
                     process_viral_image_input(pasted_image, "clipboard")
                 else:
                     st.caption(paste_message)
-            except Exception:
-                st.caption("粘贴图片组件暂不可用，请继续使用文件上传。")
+            except Exception as error:
+                log_paste_component_error(error, "viral image input")
+                st.caption(PASTE_UNAVAILABLE_MESSAGE)
         st.caption("仅处理你主动粘贴的图片，不读取剪贴板文本。")
 
 
@@ -2452,6 +2544,12 @@ def main() -> None:
         rewritten_body = rewrite_result.body
         title_changes = build_rewrite_changes(findings, "标题")
         body_changes = build_rewrite_changes(findings, "正文")
+        format_changes = build_format_preserving_changes(
+            title,
+            body,
+            rewritten_title,
+            rewritten_body,
+        )
         risk_level, risk_summary, risk_class = get_risk_level(findings)
         safety_score, safety_status = get_content_safety_score(findings)
         highlighted_title = build_highlighted_text(title, findings, "标题")
@@ -2549,7 +2647,7 @@ def main() -> None:
             if not has_review:
                 st.info("完成审核后，可在这里生成安全版文案。")
             else:
-                line_mode_tab, full_mode_tab = st.tabs(["逐条审校", "完整安全版"])
+                line_mode_tab, full_mode_tab = st.tabs(["逐条审校", "格式保持版"])
                 with line_mode_tab:
                     st.caption("逐条确认风险位置和最小修改建议；系统不会操作或覆盖供应商原文。")
                     render_line_review_mode(
@@ -2558,7 +2656,7 @@ def main() -> None:
                     )
 
                 with full_mode_tab:
-                    st.info("完整安全版仅供参考，建议结合逐条审校结果确认后使用。")
+                    st.info("格式保持版只修改命中的风险表达，保留原段落、换行、emoji和标签；建议确认后再替换供应商原稿。")
                     rewrite_label = "重新生成安全版" if st.session_state.get("safe_rewrite_key") == rewrite_key else "一键生成安全版"
                     if st.button(rewrite_label, type="primary", use_container_width=True, key="safe_rewrite_button"):
                         with st.spinner("正在生成安全版文案..."):
@@ -2577,8 +2675,9 @@ def main() -> None:
                             error=rewrite_result.error,
                         )
                     )
-                    st.text_input("改写后标题", value=rewritten_title, key="rewritten_title_display")
-                    st.text_area("改写后正文", value=rewritten_body, height=170, key="rewritten_body_display")
+                    st.text_input("格式保持标题", value=rewritten_title, key="rewritten_title_display")
+                    st.text_area("格式保持正文", value=rewritten_body, height=170, key="rewritten_body_display")
+                    render_format_preserving_changes(format_changes)
                     with st.expander("查看修改原因与记录"):
                         if rewrite_result.reason:
                             st.markdown("**修改原因**")

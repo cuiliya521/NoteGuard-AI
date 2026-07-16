@@ -17,6 +17,13 @@ class RewriteChange:
 
 
 @dataclass(frozen=True)
+class FormatPreservingChange:
+    original: str
+    replacement: str
+    location: str
+
+
+@dataclass(frozen=True)
 class RewriteResult:
     title: str
     body: str
@@ -53,11 +60,11 @@ PHRASE_REPLACEMENTS = {
 
 def clean_rewritten_text(text: str, preserve_layout: bool = False) -> str:
     """Remove obvious artifacts introduced by local term replacements."""
+    if preserve_layout:
+        return text or ""
+
     cleaned = re.sub(r"[\t\f\v ]+", " ", text or "").strip()
     cleaned = re.sub(r"(?<=[\u4e00-\u9fff])[\t ]+(?=[\u4e00-\u9fff])", "", cleaned)
-
-    if preserve_layout:
-        return cleaned
 
     # Collapse adjacent repeated Chinese words or short phrases, for example 思维思维.
     while True:
@@ -195,27 +202,163 @@ def get_line_review_progress(
 
 def rewrite_by_local_rules(text: str, findings: list[Finding], position: str) -> str:
     rewritten = text or ""
-    for phrase, replacement in sorted(
-        PHRASE_REPLACEMENTS.items(),
-        key=lambda item: len(item[0]),
-        reverse=True,
-    ):
-        rewritten = rewritten.replace(phrase, replacement)
-
     position_findings = [
         finding
         for finding in findings
         if finding.position == position and finding.suggestion
     ]
 
-    seen_terms: set[str] = set()
-    for finding in sorted(position_findings, key=lambda item: len(item.term), reverse=True):
-        if finding.term in seen_terms:
+    replacements: list[tuple[int, int, str]] = []
+    for finding in position_findings:
+        start, end = finding.start, finding.end
+        replacement = finding.suggestion
+        for phrase, phrase_replacement in sorted(
+            PHRASE_REPLACEMENTS.items(),
+            key=lambda item: len(item[0]),
+            reverse=True,
+        ):
+            term_offset = phrase.find(finding.term)
+            phrase_start = start - term_offset
+            phrase_end = phrase_start + len(phrase)
+            if (
+                term_offset >= 0
+                and phrase_start >= 0
+                and rewritten[phrase_start:phrase_end] == phrase
+            ):
+                start, end = phrase_start, phrase_end
+                replacement = phrase_replacement
+                break
+        if any(start < used_end and end > used_start for used_start, used_end, _ in replacements):
             continue
-        rewritten = rewritten.replace(finding.term, finding.suggestion)
-        seen_terms.add(finding.term)
+        replacements.append((start, end, replacement))
+
+    for start, end, replacement in sorted(replacements, reverse=True):
+        rewritten = rewritten[:start] + replacement + rewritten[end:]
 
     return clean_rewritten_text(rewritten, preserve_layout=position == "正文")
+
+
+def _split_lines_with_separators(text: str) -> tuple[list[str], list[str]]:
+    parts = re.split(r"(\r\n|\r|\n)", text or "")
+    return parts[::2], parts[1::2]
+
+
+def _line_findings(text: str, findings: list[Finding]) -> list[list[Finding]]:
+    lines, separators = _split_lines_with_separators(text)
+    grouped: list[list[Finding]] = [[] for _ in lines]
+    offset = 0
+    for index, line in enumerate(lines):
+        line_end = offset + len(line)
+        grouped[index] = [
+            finding
+            for finding in findings
+            if finding.start < line_end and finding.end > offset
+        ]
+        offset = line_end + (len(separators[index]) if index < len(separators) else 0)
+    return grouped
+
+
+def _preserves_non_risk_text(original: str, candidate: str, findings: list[Finding], offset: int) -> bool:
+    intervals: list[tuple[int, int]] = []
+    for finding in findings:
+        start = max(0, finding.start - offset)
+        end = min(len(original), finding.end - offset)
+        if start < end:
+            intervals.append((start, end))
+    intervals.sort()
+
+    cursor = 0
+    candidate_cursor = 0
+    for start, end in intervals:
+        protected = original[cursor:start]
+        protected_index = candidate.find(protected, candidate_cursor)
+        if protected and protected_index == -1:
+            return False
+        if protected:
+            candidate_cursor = protected_index + len(protected)
+        cursor = max(cursor, end)
+
+    protected = original[cursor:]
+    return not protected or candidate.find(protected, candidate_cursor) != -1
+
+
+def merge_format_preserving_rewrite(
+    original: str,
+    candidate: str,
+    findings: list[Finding],
+    position: str,
+) -> str:
+    """Accept AI edits only on risk-bearing lines while preserving original layout."""
+    position_findings = [item for item in findings if item.position == position]
+    if not position_findings or not candidate:
+        return original or ""
+
+    original_lines, separators = _split_lines_with_separators(original)
+    candidate_lines, candidate_separators = _split_lines_with_separators(candidate)
+    local_lines, _ = _split_lines_with_separators(
+        rewrite_by_local_rules(original, position_findings, position)
+    )
+    grouped_findings = _line_findings(original, position_findings)
+
+    same_layout = (
+        len(original_lines) == len(candidate_lines)
+        and separators == candidate_separators
+    )
+    result_lines: list[str] = []
+    offset = 0
+    for index, original_line in enumerate(original_lines):
+        line_findings = grouped_findings[index]
+        if not line_findings:
+            result_lines.append(original_line)
+        elif same_layout:
+            candidate_line = candidate_lines[index]
+            removed_risks = all(item.term not in candidate_line for item in line_findings)
+            if removed_risks and _preserves_non_risk_text(
+                original_line,
+                candidate_line,
+                line_findings,
+                offset,
+            ):
+                result_lines.append(candidate_line)
+            else:
+                result_lines.append(local_lines[index])
+        else:
+            result_lines.append(local_lines[index])
+        offset += len(original_line) + (len(separators[index]) if index < len(separators) else 0)
+
+    fragments: list[str] = []
+    for index, line in enumerate(result_lines):
+        fragments.append(line)
+        if index < len(separators):
+            fragments.append(separators[index])
+    return "".join(fragments)
+
+
+def build_format_preserving_changes(
+    original_title: str,
+    original_body: str,
+    rewritten_title: str,
+    rewritten_body: str,
+) -> list[FormatPreservingChange]:
+    changes: list[FormatPreservingChange] = []
+    if original_title != rewritten_title:
+        changes.append(
+            FormatPreservingChange(original_title, rewritten_title, "标题")
+        )
+
+    original_lines = (original_body or "").splitlines()
+    rewritten_lines = (rewritten_body or "").splitlines()
+    for index, original_line in enumerate(original_lines):
+        rewritten_line = rewritten_lines[index] if index < len(rewritten_lines) else ""
+        if original_line != rewritten_line:
+            changes.append(
+                FormatPreservingChange(
+                    original_line,
+                    rewritten_line,
+                    f"正文 · 第 {index + 1} 行",
+                )
+            )
+    return changes
 
 
 def rewrite_all(
@@ -232,8 +375,18 @@ def rewrite_all(
     )
     if ai_result:
         return RewriteResult(
-            title=ai_result.get("title") or title,
-            body=ai_result.get("body") or body,
+            title=merge_format_preserving_rewrite(
+                title,
+                ai_result.get("title") or title,
+                findings,
+                "标题",
+            ),
+            body=merge_format_preserving_rewrite(
+                body,
+                ai_result.get("body") or body,
+                findings,
+                "正文",
+            ),
             source="deepseek",
             reason=ai_result.get("reason", ""),
             error="",

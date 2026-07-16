@@ -92,15 +92,17 @@ class ImageInputTests(unittest.TestCase):
             normalize_image_input(b"not-an-image", "clipboard")
 
     def test_missing_component_does_not_affect_upload_processing(self) -> None:
-        with patch(
-            "services.clipboard_image.import_module",
-            side_effect=ModuleNotFoundError,
-        ):
-            paste_button, message = load_paste_image_button()
+        with self.assertLogs("services.clipboard_image", level="ERROR") as logs:
+            with patch(
+                "services.clipboard_image.import_module",
+                side_effect=ModuleNotFoundError("test dependency missing"),
+            ):
+                paste_button, message = load_paste_image_button()
 
         uploaded = normalize_image_input(UploadedImage(make_png()), "upload")
         self.assertIsNone(paste_button)
         self.assertIn("文件上传", message)
+        self.assertIn("test dependency missing", "\n".join(logs.output))
         self.assertEqual(uploaded.image_format, "PNG")
 
 

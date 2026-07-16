@@ -4,10 +4,12 @@ import unittest
 from unittest.mock import patch
 
 from services.rewriter import (
+    build_format_preserving_changes,
     build_line_review_items,
     build_supplier_feedback,
     get_line_review_progress,
     review_title_candidates,
+    rewrite_all,
     rewrite_with_local_rules,
 )
 from services.rule_checker import check_text, load_rules
@@ -98,6 +100,51 @@ class TitleRewriteTests(unittest.TestCase):
             result.body,
             "第一行✨！！\n娃数理思维基础薄弱\n#数理思维学习",
         )
+
+    @patch("services.rewriter.rewrite_content")
+    def test_ai_rewrite_cannot_rewrite_normal_lines(self, rewrite_content) -> None:
+        body = "老师介绍👩‍🏫\n孩子数学基础薄弱\n#数学学习"
+        findings = check_text("", body, self.rules)
+        rewrite_content.return_value = {
+            "title": "",
+            "body": "全新开头\n全篇重写\n全新标签",
+            "reason": "整体优化",
+        }
+
+        result = rewrite_all("", body, findings)
+
+        self.assertEqual(
+            result.body,
+            "老师介绍👩‍🏫\n娃数理思维基础薄弱\n#数理思维学习",
+        )
+
+    @patch("services.rewriter.rewrite_content")
+    def test_ai_rewrite_preserves_original_newlines_and_tags(self, rewrite_content) -> None:
+        body = "孩子数学基础薄弱\n\n线上1v1陪练✨\n#数学学习"
+        findings = check_text("", body, self.rules)
+        rewrite_content.return_value = {
+            "title": "",
+            "body": "娃数理思维基础薄弱\n\n线上1v1陪练✨\n#数理思维学习",
+            "reason": "最小修改",
+        }
+
+        result = rewrite_all("", body, findings)
+
+        self.assertEqual(result.body.count("\n"), body.count("\n"))
+        self.assertIn("线上1v1陪练✨", result.body)
+        self.assertTrue(result.body.endswith("#数理思维学习"))
+
+    def test_format_preserving_changes_show_actual_line_locations(self) -> None:
+        changes = build_format_preserving_changes(
+            "孩子数学",
+            "正常行\n孩子数学基础薄弱",
+            "娃数理思维",
+            "正常行\n娃数理思维基础薄弱",
+        )
+
+        self.assertEqual([item.location for item in changes], ["标题", "正文 · 第 2 行"])
+        self.assertEqual(changes[1].original, "孩子数学基础薄弱")
+        self.assertEqual(changes[1].replacement, "娃数理思维基础薄弱")
 
     def test_line_review_generation_does_not_write_external_files(self) -> None:
         title = "孩子数学基础薄弱"
