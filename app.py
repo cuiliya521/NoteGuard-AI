@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import asdict
 import json
 import hashlib
+import inspect
 import time
 from html import escape
 from pathlib import Path
@@ -11,6 +12,7 @@ from uuid import uuid4
 import streamlit as st
 import streamlit.components.v1 as components
 
+from services import note_generator as note_generator_service
 from services.history import (
     create_history_record,
     load_recent_history,
@@ -43,9 +45,6 @@ from services.note_generator import (
     CONTENT_DIRECTIONS,
     GENERATION_MODES,
     IMAGE_GENERATION_STRUCTURE,
-    IMAGE_NOTE_MAX_CHARS,
-    IMAGE_NOTE_MIN_CHARS,
-    IMAGE_NOTE_TITLE_COUNT,
     LENGTH_RANGES,
     build_image_source_context,
     build_generation_request_key,
@@ -53,7 +52,6 @@ from services.note_generator import (
     can_generate_note,
     finalize_generated_note,
     get_structure_guidance,
-    validate_image_note_format,
 )
 from services.ocr_postprocessor import correct_ocr_text
 from services.llm import (
@@ -104,6 +102,25 @@ from services.viral_analyzer import (
     store_viral_image_payload,
 )
 from services.viral_examples import load_viral_examples
+
+
+IMAGE_NOTE_MIN_CHARS = getattr(note_generator_service, "IMAGE_NOTE_MIN_CHARS", 800)
+IMAGE_NOTE_MAX_CHARS = getattr(note_generator_service, "IMAGE_NOTE_MAX_CHARS", 1000)
+IMAGE_NOTE_TITLE_COUNT = getattr(note_generator_service, "IMAGE_NOTE_TITLE_COUNT", 3)
+_image_note_format_validator = getattr(
+    note_generator_service,
+    "validate_image_note_format",
+    None,
+)
+_finalizer_supports_title_count = "expected_title_count" in inspect.signature(
+    finalize_generated_note
+).parameters
+
+
+def validate_image_note_format(generated: dict) -> list[str]:
+    if callable(_image_note_format_validator):
+        return _image_note_format_validator(generated)
+    return []
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -3028,16 +3045,20 @@ def main() -> None:
                                     + "。请重新生成。"
                                 )
                             else:
+                                finalize_options = {
+                                    "max_body_chars": max_chars,
+                                    "include_action": include_action,
+                                    "include_tags": include_tags,
+                                }
+                                if _finalizer_supports_title_count:
+                                    finalize_options["expected_title_count"] = (
+                                        IMAGE_NOTE_TITLE_COUNT if image_mode else 5
+                                    )
                                 note_result = (
                                     finalize_generated_note(
                                         raw_note,
                                         rules,
-                                        max_body_chars=max_chars,
-                                        include_action=include_action,
-                                        include_tags=include_tags,
-                                        expected_title_count=(
-                                            IMAGE_NOTE_TITLE_COUNT if image_mode else 5
-                                        ),
+                                        **finalize_options,
                                     )
                                     if raw_note
                                     else None
