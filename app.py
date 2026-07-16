@@ -2445,14 +2445,18 @@ def main() -> None:
                 )
 
     rules = get_rules()
+try:
     creator_profile = load_creator_profile(
         CREATOR_PROFILE_PATH,
         fallback_path=DEMO_CREATOR_PROFILE_PATH,
     )
-    if workspace_page == "规则管理":
-        render_rule_management()
-        return
-    if workspace_page == "封面诊断":
+except Exception:
+    creator_profile = load_creator_profile(DEMO_CREATOR_PROFILE_PATH)
+
+if workspace_page == "规则管理":
+    render_rule_management()
+    return  
+ if workspace_page == "封面诊断":
         render_cover_diagnosis_page(rules, creator_profile)
         return
     if workspace_page == "爆款拆解":
