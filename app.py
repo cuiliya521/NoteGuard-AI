@@ -126,6 +126,7 @@ def validate_image_note_format(generated: dict) -> list[str]:
 BASE_DIR = Path(__file__).resolve().parent
 RULE_PATH = BASE_DIR / "data" / "rules.json"
 CREATOR_PROFILE_PATH = BASE_DIR / "data" / "creator_profile.json"
+DEMO_CREATOR_PROFILE_PATH = BASE_DIR / "data" / "creator_profile.demo.json"
 VIRAL_EXAMPLES_PATH = BASE_DIR / "data" / "viral_examples.json"
 EXPERIENCE_TITLE = "数学差生逆袭秘籍！30天提高50分"
 EXPERIENCE_BODY = """孩子数学一直拖后腿，
@@ -2444,7 +2445,10 @@ def main() -> None:
                 )
 
     rules = get_rules()
-    creator_profile = load_creator_profile(CREATOR_PROFILE_PATH)
+    creator_profile = load_creator_profile(
+        CREATOR_PROFILE_PATH,
+        fallback_path=DEMO_CREATOR_PROFILE_PATH,
+    )
     if workspace_page == "规则管理":
         render_rule_management()
         return

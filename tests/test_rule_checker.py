@@ -13,7 +13,23 @@ from services.rule_checker import (
 )
 
 
+RULES_PATH = Path(__file__).resolve().parents[1] / "data" / "rules.json"
+
+
 class RuleCheckerTests(unittest.TestCase):
+    def test_public_rules_keep_generic_education_risk_detection(self) -> None:
+        records = load_rule_records(RULES_PATH)
+        terms = {record["term"] for record in records}
+
+        self.assertIn("保证提分", terms)
+        self.assertIn("100%有效", terms)
+        self.assertIn("差生", terms)
+        self.assertTrue(
+            {"效果承诺", "绝对化表达", "权威背书", "人群表达"}
+            <= {record["category"] for record in records}
+        )
+        self.assertTrue(all("Demo" not in record["term"] for record in records))
+
     def test_rule_add_disable_and_delete(self) -> None:
         with TemporaryDirectory() as directory:
             rule_path = Path(directory) / "data" / "rules.json"

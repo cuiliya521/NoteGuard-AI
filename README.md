@@ -33,7 +33,7 @@ ai-reviewer-app/
 ### 1. 进入项目目录
 
 ```bash
-cd "/Users/edy/Desktop/AI Reviewer/开发/ai-reviewer-app"
+cd "ai-reviewer-app"
 ```
 
 ### 2. 创建虚拟环境

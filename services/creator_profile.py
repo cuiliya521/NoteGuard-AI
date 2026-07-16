@@ -35,20 +35,29 @@ def ensure_creator_profile(path: Path) -> None:
         )
 
 
-def load_creator_profile(path: Path) -> dict[str, str]:
-    ensure_creator_profile(path)
+def _read_creator_profile(path: Path) -> dict[str, str] | None:
     try:
         raw_profile = json.loads(path.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError):
-        return empty_creator_profile()
-
+        return None
     if not isinstance(raw_profile, dict):
-        return empty_creator_profile()
-
+        return None
     return {
         field: str(raw_profile.get(field, "")).strip()
         for field in PROFILE_FIELDS
     }
+
+
+def load_creator_profile(
+    path: Path,
+    fallback_path: Path | None = None,
+) -> dict[str, str]:
+    ensure_creator_profile(path)
+    profile = _read_creator_profile(path) or empty_creator_profile()
+    if any(profile.values()) or fallback_path is None:
+        return profile
+    fallback_profile = _read_creator_profile(fallback_path)
+    return fallback_profile or profile
 
 
 def save_creator_profile(path: Path, profile: dict[str, Any]) -> None:

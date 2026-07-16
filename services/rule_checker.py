@@ -15,7 +15,7 @@ SEVERITY_LABELS = {
 }
 VALID_SEVERITIES = set(SEVERITY_LABELS)
 
-SAFE_TERMS = ["1v1", "一对一", "手把手", "线上", "试听", "刘梦亚"]
+SAFE_TERMS = ["1v1", "一对一", "手把手", "线上", "试听"]
 CONTEXT_EFFECT_TERMS = ["保证", "保过", "满分", "逆袭", "提分", "出分", "分数"]
 RESULT_PROMISE_PATTERNS = [
     (

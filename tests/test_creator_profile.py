@@ -6,6 +6,7 @@ from unittest.mock import patch
 
 from services import history
 from services.creator_profile import (
+    PROFILE_FIELDS,
     build_creator_profile_context,
     empty_creator_profile,
     load_creator_profile,
@@ -14,6 +15,14 @@ from services.creator_profile import (
 
 
 class CreatorProfileTests(unittest.TestCase):
+    def test_public_demo_profile_keeps_complete_field_structure(self) -> None:
+        demo_path = Path(__file__).resolve().parents[1] / "data" / "creator_profile.demo.json"
+        demo_profile = json.loads(demo_path.read_text(encoding="utf-8"))
+
+        self.assertEqual(set(demo_profile), set(PROFILE_FIELDS))
+        self.assertTrue(all(str(demo_profile[field]).strip() for field in PROFILE_FIELDS))
+        self.assertIn("公开Demo", demo_profile["name"])
+
     def test_missing_creator_profile_creates_blank_template(self) -> None:
         with TemporaryDirectory() as directory:
             profile_path = Path(directory) / "data" / "creator_profile.json"
@@ -39,6 +48,34 @@ class CreatorProfileTests(unittest.TestCase):
             self.assertEqual(context, {"name": "测试老师", "subjects": "数学"})
             self.assertNotIn("unknown_field", context)
             self.assertNotIn("pricing", context)
+
+    def test_blank_local_profile_uses_public_demo_fallback(self) -> None:
+        with TemporaryDirectory() as directory:
+            profile_path = Path(directory) / "creator_profile.json"
+            demo_path = Path(directory) / "creator_profile.demo.json"
+            demo_profile = {
+                field: f"Demo {field}"
+                for field in empty_creator_profile()
+            }
+            demo_path.write_text(
+                json.dumps(demo_profile, ensure_ascii=False),
+                encoding="utf-8",
+            )
+
+            profile = load_creator_profile(profile_path, fallback_path=demo_path)
+
+            self.assertEqual(profile, demo_profile)
+
+    def test_saved_local_profile_takes_priority_over_demo(self) -> None:
+        with TemporaryDirectory() as directory:
+            profile_path = Path(directory) / "creator_profile.json"
+            demo_path = Path(directory) / "creator_profile.demo.json"
+            save_creator_profile(profile_path, {"name": "用户已保存老师"})
+            save_creator_profile(demo_path, {"name": "Demo老师"})
+
+            profile = load_creator_profile(profile_path, fallback_path=demo_path)
+
+            self.assertEqual(profile["name"], "用户已保存老师")
 
     def test_corrupt_profile_and_history_files_fall_back_to_empty(self) -> None:
         with TemporaryDirectory() as directory:

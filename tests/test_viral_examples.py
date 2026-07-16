@@ -1,12 +1,27 @@
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import json
+import re
 import unittest
 
 from services.viral_examples import load_viral_examples
 
 
 class ViralExamplesTests(unittest.TestCase):
+    def test_public_examples_keep_structure_without_private_business_markers(self) -> None:
+        path = Path(__file__).resolve().parents[1] / "data" / "viral_examples.json"
+        examples = load_viral_examples(path)
+        serialized = json.dumps(examples, ensure_ascii=False)
+
+        self.assertEqual(len(examples), 3)
+        self.assertTrue(all(example["structure"] for example in examples))
+        self.assertTrue(all(example["opening_style"] for example in examples))
+        self.assertTrue(all(example["conversion_style"] for example in examples))
+        self.assertIn("公开Demo", serialized)
+        self.assertIsNone(re.search(r"\d+\s*(?:元|r)/", serialized, re.IGNORECASE))
+        self.assertIsNone(re.search(r"20\d{2}[年.-]", serialized))
+        self.assertIsNone(re.search(r"\d+节免费", serialized))
+
     def test_missing_file_is_created_as_empty_list(self) -> None:
         with TemporaryDirectory() as directory:
             path = Path(directory) / "viral_examples.json"

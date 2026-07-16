@@ -99,7 +99,7 @@ class NoteGeneratorTests(unittest.TestCase):
         )
 
         self.assertEqual(payload["creator_profile"], {})
-        self.assertNotIn("海淀一线教学12年", str(payload))
+        self.assertNotIn("某机构一线教学12年", str(payload))
         self.assertIn("不得虚构", NOTE_GENERATION_PROMPT)
 
     def test_different_content_directions_have_different_structures(self) -> None:
@@ -134,14 +134,14 @@ class NoteGeneratorTests(unittest.TestCase):
         }
         payload = build_note_generation_payload(
             "函数怎么学",
-            creator_profile={"name": "刘老师", "pricing": ""},
+            creator_profile={"name": "Demo老师", "pricing": ""},
             generation_options={"content_direction": "干货分享型"},
             source_materials=source_materials,
             risk_items=[],
         )
 
         self.assertEqual(payload["source_materials"], source_materials)
-        self.assertEqual(payload["creator_profile"], {"name": "刘老师"})
+        self.assertEqual(payload["creator_profile"], {"name": "Demo老师"})
 
     def test_image_generation_keeps_cover_analysis_and_active_rule_constraints(self) -> None:
         cover_analysis = {"score": 82, "core_selling_point": "函数学习方法"}
@@ -155,7 +155,7 @@ class NoteGeneratorTests(unittest.TestCase):
         context["rule_constraints"] = constraints
         payload = build_note_generation_payload(
             "初二函数",
-            creator_profile={"name": "刘老师"},
+            creator_profile={"name": "Demo老师"},
             generation_options={"generation_mode": "根据图片生成"},
             source_materials={
                 "ocr_text": context["ocr_text"],
@@ -183,7 +183,7 @@ class NoteGeneratorTests(unittest.TestCase):
         ]
         payload = build_note_generation_payload(
             "初二数学",
-            creator_profile={"name": "刘老师"},
+            creator_profile={"name": "Demo老师"},
             generation_options={"generation_mode": "根据图片生成"},
             source_materials={
                 "image_analysis": {"cover_theme": "数学学习"},
@@ -324,13 +324,13 @@ class NoteGeneratorTests(unittest.TestCase):
         }
         payload = build_note_generation_payload(
             "",
-            creator_profile={"name": "刘老师", "unknown_claim": "带过万名学员"},
+            creator_profile={"name": "Demo老师", "unknown_claim": "带过万名学员"},
             generation_options={"generation_mode": "根据图片生成"},
             source_materials={"image_analysis": image_analysis},
             risk_items=[],
         )
 
-        self.assertEqual(payload["creator_profile"], {"name": "刘老师"})
+        self.assertEqual(payload["creator_profile"], {"name": "Demo老师"})
         self.assertEqual(payload["source_materials"]["image_analysis"], image_analysis)
         self.assertIn("成绩保证", NOTE_GENERATION_PROMPT)
 

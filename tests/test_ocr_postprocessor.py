@@ -16,12 +16,12 @@ class OcrPostprocessorTests(unittest.TestCase):
 
     def test_creator_profile_terms_can_correct_one_character_variant(self) -> None:
         result = correct_ocr_text(
-            "海淀一线教字",
-            creator_profile={"personal_experience": "海淀一线教学"},
+            "某地一线教字",
+            creator_profile={"personal_experience": "某地一线教学"},
             confidence=88,
         )
 
-        self.assertEqual(result.optimized_text, "海淀一线教学")
+        self.assertEqual(result.optimized_text, "某地一线教学")
 
     def test_low_confidence_keeps_original_text_for_confirmation(self) -> None:
         result = correct_ocr_text("思维训炼", confidence=40)
