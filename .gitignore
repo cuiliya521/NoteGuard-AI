@@ -8,8 +8,17 @@ __pycache__/
 .streamlit/
 .pytest_cache/
 .mypy_cache/
+.tmp-*/
 *.tmp
 *.save
+streamlit-start.*.log
+test_deepseek_vision.py
+start.ps1
+start-noteguard.cmd
 data/history.json
 data/creator_profile.json
+data/business_profiles.json
+data/content_plans.json
+data/viral_case_library.json
+data/viral_method_models.json
 outputs/

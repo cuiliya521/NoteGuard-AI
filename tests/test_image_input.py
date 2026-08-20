@@ -70,11 +70,13 @@ class ImageInputTests(unittest.TestCase):
         store_image_payload(state, first)
         state["cover_ocr_lines"] = ["旧文字"]
         state["cover_analysis"] = {"score": 50}
+        state["cover_image_description"] = "旧图片描述"
 
         self.assertTrue(store_image_payload(state, second))
         self.assertNotIn("cover_ocr_lines", state)
         self.assertNotIn("cover_analysis", state)
         self.assertEqual(state["draft_image_text"], "")
+        self.assertEqual(state["cover_image_description"], "")
         self.assertEqual(state["current_image_source"], "clipboard")
 
     def test_empty_or_text_clipboard_returns_friendly_error(self) -> None:

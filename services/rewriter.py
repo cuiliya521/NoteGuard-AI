@@ -68,7 +68,7 @@ def clean_rewritten_text(text: str, preserve_layout: bool = False) -> str:
 
     # Collapse adjacent repeated Chinese words or short phrases, for example 思维思维.
     while True:
-        updated = re.sub(r"([\u4e00-\u9fff]{1,6})\1", r"\1", cleaned)
+        updated = re.sub(r"([\u4e00-\u9fff]{2,6})\1", r"\1", cleaned)
         if updated == cleaned:
             break
         cleaned = updated

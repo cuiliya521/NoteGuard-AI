@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <script>
+      function sendMessageToStreamlitClient(type, data) {
+        window.parent.postMessage(
+          Object.assign({isStreamlitMessage: true, type: type}, data),
+          "*"
+        );
+      }
+      const Streamlit = {
+        RENDER_EVENT: "streamlit:render",
+        setComponentReady: () => sendMessageToStreamlitClient(
+          "streamlit:componentReady",
+          {apiVersion: 1}
+        ),
+        setFrameHeight: height => sendMessageToStreamlitClient(
+          "streamlit:setFrameHeight",
+          {height: height}
+        ),
+        setComponentValue: value => sendMessageToStreamlitClient(
+          "streamlit:setComponentValue",
+          {value: value}
+        ),
+        events: {
+          addEventListener: (type, callback) => {
+            window.addEventListener("message", event => {
+              if (event.data.type === type) {
+                event.detail = event.data;
+                callback(event);
+              }
+            });
+          }
+        }
+      };
+    </script>
+    <style>
+      html, body {
+        margin: 0;
+        padding: 0;
+        background: transparent;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+      #paste-zone {
+        min-height: 86px;
+        box-sizing: border-box;
+        border: 1px dashed #f1a5ac;
+        border-radius: 12px;
+        background: #fff7f7;
+        color: #344054;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-direction: column;
+        gap: 5px;
+        cursor: pointer;
+        outline: none;
+        transition: border-color .16s ease, box-shadow .16s ease, background .16s ease;
+      }
+      #paste-zone:hover,
+      #paste-zone:focus {
+        border-color: #ef4f5f;
+        background: #fff;
+        box-shadow: 0 0 0 3px rgba(239, 79, 95, .12);
+      }
+      #paste-zone strong {
+        font-size: 14px;
+      }
+      #paste-zone span {
+        color: #667085;
+        font-size: 12px;
+      }
+      #status {
+        color: #ef4f5f;
+        font-size: 12px;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="paste-zone" tabindex="0" role="button" aria-label="粘贴剪贴板图片">
+      <strong id="label">点击这里后按 Ctrl+V 粘贴截图</strong>
+      <span>支持微信、小红书和浏览器截图</span>
+      <div id="status"></div>
+    </div>
+    <script>
+      const zone = document.getElementById("paste-zone");
+      const label = document.getElementById("label");
+      const status = document.getElementById("status");
+
+      function sendValue(value) {
+        Streamlit.setComponentValue(value);
+      }
+
+      function readImageFile(file) {
+        if (!file || !file.type.startsWith("image/")) {
+          status.textContent = "剪贴板里没有图片";
+          return;
+        }
+        status.textContent = "正在读取截图…";
+        const reader = new FileReader();
+        reader.onload = () => {
+          status.textContent = "截图已读取";
+          sendValue(reader.result);
+        };
+        reader.onerror = () => {
+          status.textContent = "截图读取失败";
+          sendValue("error: image read failed");
+        };
+        reader.readAsDataURL(file);
+      }
+
+      function handlePaste(event) {
+        const items = Array.from(event.clipboardData?.items || []);
+        const imageItem = items.find(item => item.kind === "file" && item.type.startsWith("image/"));
+        if (!imageItem) {
+          status.textContent = "剪贴板里没有图片";
+          return;
+        }
+        event.preventDefault();
+        readImageFile(imageItem.getAsFile());
+      }
+
+      async function readClipboardOnClick() {
+        zone.focus();
+        if (!navigator.clipboard?.read) {
+          status.textContent = "请按 Ctrl+V 粘贴截图";
+          return;
+        }
+        try {
+          const clipboardItems = await navigator.clipboard.read();
+          for (const item of clipboardItems) {
+            const imageType = item.types.find(type => type.startsWith("image/"));
+            if (imageType) {
+              readImageFile(await item.getType(imageType));
+              return;
+            }
+          }
+          status.textContent = "剪贴板里没有图片";
+        } catch (_) {
+          status.textContent = "请按 Ctrl+V 粘贴截图";
+        }
+      }
+
+      window.addEventListener("paste", handlePaste);
+      zone.addEventListener("paste", handlePaste);
+      zone.addEventListener("click", readClipboardOnClick);
+
+      Streamlit.events.addEventListener(Streamlit.RENDER_EVENT, event => {
+        const args = event.detail.args || {};
+        label.textContent = args.label || "点击这里后按 Ctrl+V 粘贴截图";
+        Streamlit.setFrameHeight(92);
+      });
+      Streamlit.setComponentReady();
+      Streamlit.setFrameHeight(92);
+    </script>
+  </body>
+</html>

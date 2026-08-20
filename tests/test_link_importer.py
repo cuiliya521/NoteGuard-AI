@@ -69,6 +69,97 @@ class LinkImporterTests(unittest.TestCase):
         self.assertIn("/second.png", parser.image_urls)
         self.assertFalse(any("window.secret" in item for item in parser.text_parts))
 
+    def test_meta_cover_precedes_page_images_and_body_images_stay_separate(self) -> None:
+        result = parse_public_page(
+            '<html><head><meta property="og:title" content="数学案例">'
+            '<meta property="og:image" content="/cover.jpg"></head>'
+            '<body><p>公开正文</p><img src="/body-1.jpg"><img src="/body-2.jpg"></body></html>',
+            "https://www.xiaohongshu.com/explore/123",
+            "https://www.xiaohongshu.com/explore/123",
+        )
+
+        self.assertEqual(result["cover_image_url"], "https://www.xiaohongshu.com/cover.jpg")
+        self.assertEqual(result["cover_image_source"], "分享图")
+        self.assertEqual(
+            result["content_image_urls"],
+            [
+                "https://www.xiaohongshu.com/body-1.jpg",
+                "https://www.xiaohongshu.com/body-2.jpg",
+            ],
+        )
+        self.assertEqual(result["image_url"], result["cover_image_url"])
+        self.assertEqual(result["image_urls"][0], result["cover_image_url"])
+
+    def test_first_displayed_image_is_cover_when_metadata_is_missing(self) -> None:
+        result = parse_public_page(
+            '<html><head><title>数学案例</title></head><body><p>公开正文</p>'
+            '<img src="/first.jpg"><img src="/second.jpg"></body></html>',
+            "https://example.com/note",
+            "https://example.com/note",
+        )
+
+        self.assertEqual(result["cover_image_url"], "https://example.com/first.jpg")
+        self.assertEqual(result["cover_image_source"], "页面首张展示图片")
+        self.assertEqual(result["content_image_urls"], ["https://example.com/second.jpg"])
+
+    def test_structured_image_is_used_before_page_images(self) -> None:
+        result = parse_public_page(
+            '<html><head><title>数学案例</title>'
+            '<meta property="og:image" content="/shared-preview.jpg">'
+            '<script type="application/ld+json">{"image":"/structured-cover.jpg"}</script>'
+            '</head><body><p>公开正文</p><img src="/body.jpg"></body></html>',
+            "https://example.com/note",
+            "https://example.com/note",
+        )
+
+        self.assertEqual(result["cover_image_url"], "https://example.com/structured-cover.jpg")
+        self.assertEqual(result["cover_image_source"], "结构化数据")
+        self.assertEqual(result["content_image_urls"], ["https://example.com/body.jpg"])
+
+    def test_xiaohongshu_note_image_list_overrides_incorrect_meta_image(self) -> None:
+        html = (
+            '<html><head><meta property="og:title" content="数学案例">'
+            '<meta property="og:image" content="https://cdn.example.com/wrong-second.jpg"></head>'
+            '<body><p>公开正文</p><script>'
+            'window.__INITIAL_STATE__={"note":{"noteDetailMap":{"note123":{"note":'
+            '{"noteId":"note123","imageList":['
+            '{"urlDefault":"https:\\/\\/cdn.example.com\\/real-cover.jpg"},'
+            '{"urlDefault":"https:\\/\\/cdn.example.com\\/body-2.jpg"}'
+            ']}}}}};'
+            '</script></body></html>'
+        )
+        result = parse_public_page(
+            html,
+            "https://www.xiaohongshu.com/explore/note123",
+            "https://www.xiaohongshu.com/explore/note123",
+        )
+
+        self.assertEqual(result["cover_image_url"], "https://cdn.example.com/real-cover.jpg")
+        self.assertEqual(result["cover_image_source"], "笔记首图")
+        self.assertEqual(result["content_image_urls"], ["https://cdn.example.com/body-2.jpg"])
+
+    def test_xiaohongshu_page_img_is_not_promoted_to_cover(self) -> None:
+        result = parse_public_page(
+            '<html><head><title>数学案例</title></head>'
+            '<body><p>公开正文</p><img src="https://cdn.example.com/promo.jpg"></body></html>',
+            "https://www.xiaohongshu.com/explore/note-without-state",
+            "https://www.xiaohongshu.com/explore/note-without-state",
+        )
+
+        self.assertEqual(result["cover_image_url"], "")
+        self.assertEqual(result["cover_image_source"], "未提取到")
+        self.assertEqual(result["content_image_urls"], ["https://cdn.example.com/promo.jpg"])
+
+    def test_xiaohongshu_unavailable_page_is_not_imported_as_a_note(self) -> None:
+        with self.assertRaisesRegex(LinkImportError, "笔记已失效"):
+            parse_public_page(
+                '<html><head><title>小红书 - 你访问的页面不见了</title>'
+                '<meta property="og:image" content="https://picasso-static.xiaohongshu.com/fe-platform/error.png">'
+                '</head><body>你访问的页面不见了</body></html>',
+                "https://www.xiaohongshu.com/explore/missing",
+                "https://www.xiaohongshu.com/explore/missing",
+            )
+
     def test_login_page_returns_login_specific_message(self) -> None:
         with self.assertRaisesRegex(LinkImportError, "需要登录"):
             parse_public_page(

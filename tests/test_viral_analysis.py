@@ -1,5 +1,7 @@
 from io import BytesIO
 import json
+import sys
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
@@ -8,6 +10,7 @@ from PIL import Image
 from services.image_input import normalize_image_input
 from services.llm import (
     VIRAL_IMAGE_ANALYSIS_PROMPT,
+    analyze_cover,
     analyze_viral_image,
     parse_viral_image_analysis_response,
 )
@@ -51,6 +54,47 @@ def valid_image_analysis(**extra) -> str:
 
 
 class ViralAnalysisTests(unittest.TestCase):
+    def test_cover_description_is_sent_as_independent_ai_context(self) -> None:
+        captured: dict[str, object] = {}
+        response_content = json.dumps(
+            {
+                "score": 80,
+                "attraction": 4,
+                "dimensions": {},
+                "issues": [],
+                "suggestions": [],
+                "recommended_copy": "数学学习方法",
+            },
+            ensure_ascii=False,
+        )
+
+        class FakeCompletions:
+            def create(self, **kwargs):
+                captured.update(kwargs)
+                return SimpleNamespace(
+                    choices=[SimpleNamespace(message=SimpleNamespace(content=response_content))]
+                )
+
+        class FakeOpenAI:
+            def __init__(self, **kwargs):
+                self.chat = SimpleNamespace(completions=FakeCompletions())
+
+        with (
+            patch.dict(sys.modules, {"openai": SimpleNamespace(OpenAI=FakeOpenAI)}),
+            patch("services.llm.get_deepseek_api_key", return_value="test-key"),
+            patch("services.llm.print_deepseek_diagnostics"),
+        ):
+            result = analyze_cover(
+                "数学学习方法",
+                [],
+                image_description="人物位于画面右侧，背景为课堂",
+            )
+
+        payload = json.loads(captured["messages"][1]["content"])
+        self.assertEqual(payload["cover_text"], "数学学习方法")
+        self.assertEqual(payload["image_description"], "人物位于画面右侧，背景为课堂")
+        self.assertEqual(result["score"], 80)
+
     def test_link_failure_does_not_block_manual_input(self) -> None:
         self.assertTrue(can_analyze_viral_input("手动标题", ""))
         self.assertTrue(can_analyze_viral_input("", "手动正文"))
@@ -114,11 +158,90 @@ class ViralAnalysisTests(unittest.TestCase):
         self.assertNotIn("ctr", result)
         self.assertNotIn("exposure", result)
 
+    def test_image_breakdown_keeps_seven_research_fields(self) -> None:
+        content = valid_image_analysis(
+            cover_text_structure="问题句主标题 + 数字方法 + 人群说明",
+            information_hierarchy="痛点、方法、适用人群",
+            layout_method="主标题上置，辅助信息下置",
+            first_glance="初二数学提分方法",
+            click_factors=["明确年级", "给出3个方法"],
+            trust_building="通过老师经验与方法过程建立信任",
+            user_pain_expression="指出孩子错题反复的具体困扰",
+            conversion_elements=["评论区领取复盘清单"],
+            reusable_template="年级痛点 + 数字方法 + 适用人群",
+        )
+
+        result = parse_viral_image_analysis_response(content)
+
+        self.assertIsNotNone(result)
+        self.assertEqual(result["cover_text_structure"], "问题句主标题 + 数字方法 + 人群说明")
+        self.assertEqual(result["information_hierarchy"], "痛点、方法、适用人群")
+        self.assertEqual(result["layout_method"], "主标题上置，辅助信息下置")
+        self.assertEqual(result["first_glance"], "初二数学提分方法")
+        self.assertEqual(result["click_factors"], ["明确年级", "给出3个方法"])
+        self.assertEqual(result["trust_building"], "通过老师经验与方法过程建立信任")
+        self.assertEqual(result["user_pain_expression"], "指出孩子错题反复的具体困扰")
+        self.assertEqual(result["conversion_elements"], ["评论区领取复盘清单"])
+        self.assertEqual(result["reusable_template"], "年级痛点 + 数字方法 + 适用人群")
+
+    def test_legacy_image_analysis_gets_research_field_fallbacks(self) -> None:
+        result = parse_viral_image_analysis_response(valid_image_analysis())
+
+        self.assertIsNotNone(result)
+        self.assertEqual(result["first_glance"], "可能以主标题为焦点")
+        self.assertEqual(result["click_factors"], ["主题文字直接"])
+        self.assertEqual(result["user_pain_expression"], "数学学习困难")
+        self.assertEqual(result["conversion_elements"], ["出现1V1"])
+        self.assertIn("家长", result["reusable_template"])
+
     def test_ai_failure_returns_none_without_exception(self) -> None:
         with patch("services.llm.get_deepseek_api_key", return_value=""):
             result = analyze_viral_image({"ocr_text": "数学学习"})
 
         self.assertIsNone(result)
+
+    def test_image_analysis_retries_network_failure_and_keeps_safe_diagnostics(self) -> None:
+        attempts = {"count": 0}
+
+        class FakeCompletions:
+            def create(self, **kwargs):
+                attempts["count"] += 1
+                if attempts["count"] < 3:
+                    raise ConnectionError("temporary network failure")
+                return SimpleNamespace(
+                    choices=[
+                        SimpleNamespace(
+                            message=SimpleNamespace(content=valid_image_analysis())
+                        )
+                    ]
+                )
+
+        class FakeOpenAI:
+            init_kwargs: list[dict] = []
+
+            def __init__(self, **kwargs):
+                self.init_kwargs.append(kwargs)
+                self.chat = SimpleNamespace(completions=FakeCompletions())
+
+        with (
+            patch.dict(sys.modules, {"openai": SimpleNamespace(OpenAI=FakeOpenAI)}),
+            patch("services.llm.get_deepseek_api_key", return_value="test-key"),
+            patch("services.llm.print_deepseek_diagnostics"),
+            patch("services.llm.time.sleep"),
+        ):
+            result = analyze_viral_image(
+                {
+                    "ocr_text": "初二数学",
+                    "image_width": 1080,
+                    "image_height": 1440,
+                    "image_bytes_size": 204800,
+                }
+            )
+
+        self.assertIsNotNone(result)
+        self.assertEqual(attempts["count"], 3)
+        self.assertTrue(all(item["max_retries"] == 0 for item in FakeOpenAI.init_kwargs))
+        self.assertTrue(all(item["timeout"] == 20.0 for item in FakeOpenAI.init_kwargs))
 
 
 if __name__ == "__main__":

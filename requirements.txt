@@ -1,9 +1,16 @@
-streamlit>=1.36.0
+streamlit==1.60.0
 openai
 python-dotenv
 Pillow
+
+# OCR（可选增强）：未安装时应用会降级为手动输入，不影响其他功能。
+# Tesseract 方案还需要系统安装 tesseract-ocr 与中文 chi_sim 语言包；
+# Linux/容器依赖已列在 packages.txt，Windows 请单独安装 Tesseract OCR 并加入 PATH。
 pytesseract
-paddlepaddle>=3.0,<4; python_version < "3.14"
-paddleocr>=3.3,<4; python_version < "3.14"
+
+# PaddleOCR 方案（Python 3.14 暂不安装，应用会自动尝试 Tesseract 或手动输入）。
+paddlepaddle==3.2.2; python_version < "3.14"
+paddleocr==3.7.0; python_version < "3.14"
+
 streamlit-paste-button==0.1.2
 pytest

@@ -58,6 +58,7 @@ def build_viral_image_context(
         "user_description": str(state.get("viral_image_description", "")).strip(),
         "image_width": width,
         "image_height": height,
+        "image_bytes_size": len(state.get("viral_image_bytes", b"") or b""),
         "aspect_ratio": ratio,
         "image_format": str(state.get("viral_image_format", "")),
         "risk_items": risk_items or [],

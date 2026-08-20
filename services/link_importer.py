@@ -33,6 +33,7 @@ DYNAMIC_MARKERS = (
 )
 LOGIN_MARKERS = ("登录后查看", "请先登录", "扫码登录", "login required", "sign in")
 LIMIT_MARKERS = ("验证码", "访问频繁", "安全验证", "captcha", "too many requests")
+XHS_UNAVAILABLE_MARKERS = ("你访问的页面不见了", "笔记已删除", "该笔记无法查看")
 
 
 class LinkImportError(ValueError):
@@ -156,6 +157,88 @@ def _clean_text(parts: list[str], limit: int = 6000) -> str:
     return joined[:limit].strip()
 
 
+def _json_ld_image_urls(parts: list[str]) -> list[str]:
+    urls: list[str] = []
+    for part in parts:
+        try:
+            value = json.loads(part)
+        except json.JSONDecodeError:
+            continue
+        records = value if isinstance(value, list) else [value]
+        for record in records:
+            if not isinstance(record, dict):
+                continue
+            image = record.get("image")
+            candidates = image if isinstance(image, list) else [image]
+            for candidate in candidates:
+                if isinstance(candidate, dict):
+                    candidate = candidate.get("url") or candidate.get("contentUrl")
+                if isinstance(candidate, str) and candidate.strip() and candidate.strip() not in urls:
+                    urls.append(candidate.strip())
+    return urls
+
+
+def _extract_balanced_array(source: str, bracket_index: int) -> str:
+    depth = 0
+    in_string = False
+    escaped = False
+    for index in range(bracket_index, len(source)):
+        char = source[index]
+        if in_string:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                in_string = False
+            continue
+        if char == '"':
+            in_string = True
+        elif char == "[":
+            depth += 1
+        elif char == "]":
+            depth -= 1
+            if depth == 0:
+                return source[bracket_index : index + 1]
+    return ""
+
+
+def _decode_embedded_url(value: str) -> str:
+    try:
+        return str(json.loads(f'"{value}"')).strip()
+    except (json.JSONDecodeError, TypeError):
+        return value.replace("\\/", "/").strip()
+
+
+def _extract_xhs_note_images(html: str, final_url: str) -> list[str]:
+    """Extract the current Xiaohongshu note imageList in its authored order."""
+    parsed_url = urlparse(final_url)
+    if "xiaohongshu.com" not in (parsed_url.hostname or "").lower():
+        return []
+    note_match = re.search(r"/(?:explore|discovery/item)/([^/?#]+)", parsed_url.path)
+    if not note_match:
+        return []
+    note_id = note_match.group(1)
+    search_positions = [match.start() for match in re.finditer(re.escape(note_id), html)]
+    for position in search_positions:
+        image_list_match = re.search(r'"imageList"\s*:\s*\[', html[position : position + 300_000])
+        if not image_list_match:
+            continue
+        array_start = position + image_list_match.end() - 1
+        fragment = _extract_balanced_array(html, array_start)
+        if not fragment:
+            continue
+        for field in ("urlDefault", "urlPre", "url"):
+            values = [
+                _decode_embedded_url(match.group(1))
+                for match in re.finditer(rf'"{field}"\s*:\s*"((?:\\.|[^"\\])*)"', fragment)
+            ]
+            image_urls = [value for value in values if value.startswith(("http://", "https://"))]
+            if image_urls:
+                return list(dict.fromkeys(image_urls))
+    return []
+
+
 def _friendly_request_error(error: Exception) -> LinkImportError:
     if isinstance(error, HTTPError):
         if error.code == 404:
@@ -222,12 +305,7 @@ def _read_with_redirects(
     raise LinkImportError("页面跳转次数过多，请改用手动输入。")
 
 
-def _absolute_public_images(parser: PublicPageParser, final_url: str) -> list[str]:
-    candidates = [
-        parser.meta.get("og:image", ""),
-        parser.meta.get("twitter:image", ""),
-        *parser.image_urls,
-    ]
+def _normalize_public_image_urls(candidates: list[str], final_url: str) -> list[str]:
     images: list[str] = []
     for candidate in candidates:
         if not candidate:
@@ -239,6 +317,69 @@ def _absolute_public_images(parser: PublicPageParser, final_url: str) -> list[st
         if absolute not in images:
             images.append(absolute)
     return images[:10]
+
+
+def _extract_public_images(
+    parser: PublicPageParser,
+    final_url: str,
+    preferred_images: list[str] | None = None,
+) -> dict[str, Any]:
+    """Keep a deterministic cover-first order while separating body images."""
+    meta_candidates = (
+        ("og:image", parser.meta.get("og:image", "")),
+        ("og:image:url", parser.meta.get("og:image:url", "")),
+        ("twitter:image", parser.meta.get("twitter:image", "")),
+    )
+    cover_image_url = ""
+    cover_image_source = ""
+    preferred = _normalize_public_image_urls(preferred_images or [], final_url)
+    if preferred:
+        cover_image_url = preferred[0]
+        cover_image_source = "笔记首图"
+
+    json_ld_images = _normalize_public_image_urls(
+        _json_ld_image_urls(parser.json_ld_parts),
+        final_url,
+    )
+    if not cover_image_url and json_ld_images:
+        cover_image_url = json_ld_images[0]
+        cover_image_source = "结构化数据"
+
+    for source, candidate in meta_candidates:
+        if cover_image_url:
+            break
+        normalized = _normalize_public_image_urls([candidate], final_url)
+        if (
+            normalized
+            and "xiaohongshu.com" in (urlparse(final_url).hostname or "").lower()
+            and "picasso-static.xiaohongshu.com/fe-platform/" in normalized[0]
+        ):
+            continue
+        if normalized:
+            cover_image_url = normalized[0]
+            cover_image_source = "分享图"
+            break
+
+    displayed_images = _normalize_public_image_urls(parser.image_urls, final_url)
+    is_xiaohongshu = "xiaohongshu.com" in (urlparse(final_url).hostname or "").lower()
+    if not cover_image_url and displayed_images and not is_xiaohongshu:
+        cover_image_url = displayed_images[0]
+        cover_image_source = "页面首张展示图片"
+
+    ordered_note_images = preferred if preferred else json_ld_images if cover_image_source == "结构化数据" else []
+    content_image_urls = [
+        url
+        for url in [*ordered_note_images[1:], *displayed_images]
+        if url != cover_image_url
+    ]
+    content_image_urls = list(dict.fromkeys(content_image_urls))
+    image_urls = [url for url in [cover_image_url, *content_image_urls] if url][:10]
+    return {
+        "cover_image_url": cover_image_url,
+        "cover_image_source": cover_image_source or "未提取到",
+        "content_image_urls": content_image_urls[:9],
+        "image_urls": image_urls,
+    }
 
 
 def parse_public_page(
@@ -253,6 +394,8 @@ def parse_public_page(
         raise LinkImportError("该页面可能需要登录，暂时无法自动读取。")
     if any(marker in lowered_html for marker in LIMIT_MARKERS):
         raise LinkImportError("页面返回验证码或访问限制，请切换手动输入。")
+    if any(marker in html for marker in XHS_UNAVAILABLE_MARKERS):
+        raise LinkImportError("该小红书笔记已失效、被删除或当前不可访问，请检查链接后重试。")
 
     parser = PublicPageParser()
     parser.feed(html)
@@ -287,7 +430,8 @@ def parse_public_page(
         status = "success"
         status_message = "已读取公开标题和正文，请确认后导入。"
 
-    images = _absolute_public_images(parser, final_url)
+    xhs_note_images = _extract_xhs_note_images(html, final_url)
+    images = _extract_public_images(parser, final_url, preferred_images=xhs_note_images)
     return {
         "original_url": original_url,
         "source_url": final_url,
@@ -296,8 +440,11 @@ def parse_public_page(
         "title": title,
         "body": body or description,
         "description": description,
-        "image_url": images[0] if images else "",
-        "image_urls": images,
+        "image_url": images["cover_image_url"],
+        "image_urls": images["image_urls"],
+        "cover_image_url": images["cover_image_url"],
+        "cover_image_source": images["cover_image_source"],
+        "content_image_urls": images["content_image_urls"],
         "status": status,
         "status_message": status_message,
     }

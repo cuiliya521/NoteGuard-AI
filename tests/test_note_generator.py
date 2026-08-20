@@ -23,10 +23,13 @@ from services.note_generator import (
     build_publish_version,
     build_rule_constraints,
     can_generate_note,
+    classify_image_content,
     finalize_generated_note,
+    get_image_content_structure,
     get_structure_guidance,
     truncate_complete_text,
     validate_image_note_format,
+    validate_publish_draft_quality,
 )
 from services.rule_checker import check_text, load_rules
 
@@ -66,6 +69,58 @@ class NoteGeneratorTests(unittest.TestCase):
 
         self.assertLessEqual(len(result["body"]), 1000)
         self.assertTrue(result["body"].endswith(("。", "！", "？", "!", "?")))
+
+    def test_complete_publish_draft_keeps_comment_question(self) -> None:
+        note = generated_note()
+        note["comment_question"] = "你家孩子最常在哪类题目上卡住？"
+
+        result = finalize_generated_note(note, self.rules, max_body_chars=700)
+
+        self.assertEqual(result["comment_question"], "你家娃最常在哪类题目上卡住？")
+        self.assertIn(result["comment_question"], result["publish_text"])
+
+    def test_course_poster_uses_course_promotion_structure(self) -> None:
+        context = {"confirmed_cover_text": "初中数学一对一课程海报 试听课"}
+        content_type = classify_image_content(context)
+
+        self.assertEqual(content_type, "课程服务")
+        self.assertIn("课程解决思路", get_image_content_structure(content_type))
+
+    def test_student_score_case_uses_case_proof_structure(self) -> None:
+        context = {"confirmed_cover_text": "学生成绩单 阶段学习记录"}
+        content_type = classify_image_content(context)
+
+        self.assertEqual(content_type, "学生成果案例")
+        self.assertIn("案例起点", get_image_content_structure(content_type))
+        self.assertIn("案例边界", get_image_content_structure(content_type))
+
+    def test_teacher_classroom_photo_uses_experience_structure(self) -> None:
+        context = {
+            "confirmed_cover_text": "",
+            "visual_scene": "老师在课堂板书并讲解题目",
+            "education_value": "展示真实教学过程和老师观察",
+        }
+        content_type = classify_image_content(context)
+
+        self.assertEqual(content_type, "教学经验")
+        self.assertIn("老师观察", get_image_content_structure(content_type))
+
+    def test_publish_draft_quality_rejects_marketing_opening_and_promises(self) -> None:
+        draft = generated_note("限时免费试听，报名后保证一定能提分。")
+
+        issues = validate_publish_draft_quality(draft, "课程服务")
+
+        self.assertTrue(any("推销" in issue for issue in issues))
+        self.assertTrue(any("绝对结果" in issue for issue in issues))
+        self.assertTrue(any("可执行方法" in issue for issue in issues))
+
+    def test_publish_draft_quality_accepts_teacher_experience_style(self) -> None:
+        draft = generated_note(
+            "很多家长会问：孩子同一道题反复出错，应该从哪里看？\n"
+            "从课堂观察看，可以先让孩子说出解题步骤，再检查卡住的具体位置。"
+        )
+
+        self.assertEqual(validate_publish_draft_quality(draft, "教学经验"), [])
 
     def test_titles_and_body_are_both_reviewed(self) -> None:
         result = finalize_generated_note(

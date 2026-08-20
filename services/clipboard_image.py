@@ -20,7 +20,7 @@ def log_paste_component_error(error: Exception, context: str) -> None:
 
 def load_paste_image_button() -> tuple[Callable[..., Any] | None, str]:
     try:
-        module = import_module("streamlit_paste_button")
+        module = import_module("services.clipboard_component")
         return module.paste_image_button, ""
     except Exception as error:
         log_paste_component_error(error, "import")

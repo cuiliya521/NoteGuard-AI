@@ -40,6 +40,11 @@ class TitleRewriteTests(unittest.TestCase):
 
         self.assertEqual(review.safe_title, "娃数理思维基础薄弱")
 
+    def test_cleanup_keeps_learning_habit_word_intact(self) -> None:
+        from services.rewriter import clean_rewritten_text
+
+        self.assertEqual(clean_rewritten_text("3个学习习惯"), "3个学习习惯")
+
     def test_generated_title_is_rechecked_after_local_safety_rewrite(self) -> None:
         review = review_title_candidates(["数学差生逆袭秘籍！30天提高50分"], self.rules)[0]
 

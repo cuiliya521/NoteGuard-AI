@@ -18,6 +18,9 @@ IMAGE_RESULT_STATE_KEYS = (
     "cover_analysis",
     "cover_analysis_error",
     "cover_ocr_lines",
+    "cover_text",
+    "cover_vision_lines",
+    "cover_vision_context",
     "cover_ocr_raw_lines",
     "cover_ocr_optimized_lines",
     "cover_ocr_confidence",
@@ -120,4 +123,5 @@ def store_image_payload(
         state.pop(key, None)
     state["image_text_input"] = ""
     state["draft_image_text"] = ""
+    state["cover_image_description"] = ""
     return True

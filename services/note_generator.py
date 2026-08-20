@@ -38,6 +38,13 @@ IMAGE_NOTE_MIN_CHARS = 800
 IMAGE_NOTE_MAX_CHARS = 1000
 IMAGE_NOTE_TITLE_COUNT = 3
 
+IMAGE_CONTENT_STRUCTURES = {
+    "教学经验": "家长真实困惑 → 具体课堂或教学场景 → 老师观察 → 问题原因 → 可执行做法 → 适用边界 → 评论区交流",
+    "学生成果案例": "案例起点（家长关心的问题） → 已确认的学习过程与方法 → 可验证变化 → 案例边界 → 可复用做法 → 评论区问题",
+    "课程服务": "家长真实困惑与使用场景 → 课程解决思路 → 已确认的课程方式与服务价值 → 适用人群 → 温和行动引导",
+    "学习方法分享": "具体学习问题 → 常见误区 → 老师判断 → 可执行步骤/清单 → 使用场景 → 评论区问题",
+}
+
 _DIRECTION_STRUCTURES = {
     "自动判断": (
         "根据素材判断最强切入点，在场景、观点、方法、可信资料和自然引导之间灵活组织。",
@@ -79,6 +86,68 @@ def get_structure_guidance(direction: str, seed: str) -> str:
     return structures[int(digest, 16) % len(structures)]
 
 
+def classify_image_content(
+    image_context: dict[str, Any],
+    image_analysis: dict[str, Any] | None = None,
+) -> str:
+    """Classify education image value before choosing a publishing structure."""
+    allowed = tuple(IMAGE_CONTENT_STRUCTURES)
+    analysis = image_analysis or {}
+    explicit = str(analysis.get("content_type") or image_context.get("content_type") or "").strip()
+    aliases = {
+        "课程推广": "课程服务",
+        "案例证明": "学生成果案例",
+        "经验分享": "教学经验",
+        "知识分享": "学习方法分享",
+    }
+    explicit = aliases.get(explicit, explicit)
+    if explicit in allowed:
+        return explicit
+    combined = "\n".join(
+        str(value)
+        for value in (
+            image_context.get("confirmed_cover_text", ""),
+            image_context.get("visual_scene", ""),
+            image_context.get("education_value", ""),
+            analysis.get("cover_theme", ""),
+            analysis.get("selling_direction", ""),
+            " ".join(analysis.get("visual_elements", []) or []),
+        )
+    )
+    if any(term in combined for term in ("课程", "招生", "试听", "课时", "辅导", "1v1", "一对一", "海报")):
+        return "课程服务"
+    if any(term in combined for term in ("成绩单", "分数", "前后对比", "提升记录", "案例", "进步")):
+        return "学生成果案例"
+    if any(term in combined for term in ("课堂", "讲课", "板书", "老师", "教学现场", "上课")):
+        return "教学经验"
+    return "学习方法分享"
+
+
+def get_image_content_structure(content_type: str) -> str:
+    return IMAGE_CONTENT_STRUCTURES.get(content_type, IMAGE_CONTENT_STRUCTURES["学习方法分享"])
+
+
+def validate_publish_draft_quality(generated: dict[str, Any], content_type: str = "") -> list[str]:
+    """Reject marketing-heavy drafts before they reach the publishing UI."""
+    titles = [str(item).strip() for item in generated.get("titles", []) if str(item).strip()]
+    body = str(generated.get("body", "")).strip()
+    opening = body[:160]
+    combined = "\n".join([*titles, body])
+    issues: list[str] = []
+    marketing_opening = ("报名", "咨询课程", "限时", "优惠", "名额", "免费试听", "加微信", "私信领取", "赶紧", "速来")
+    if any(term in opening for term in marketing_opening):
+        issues.append("正文不能用课程推销或营销动作开头")
+    if any(term in combined for term in ("保证", "一定能", "百分百", "100%", "必提分", "包过", "逆袭成功")):
+        issues.append("不得包含夸张承诺或绝对结果")
+    if any(term in combined for term in ("家长必看", "错过后悔", "震惊", "速看", "最后机会")):
+        issues.append("语气不能像营销号")
+    if not any(term in body for term in ("可以先", "第一步", "先看", "建议", "方法", "步骤", "复盘", "检查", "1️⃣")):
+        issues.append("正文必须提供至少一个可执行方法")
+    if content_type == "课程服务" and any(term in opening for term in ("课程", "课时", "价格", "收费", "报名")):
+        issues.append("课程服务内容也必须先写家长困惑或学习场景")
+    return list(dict.fromkeys(issues))
+
+
 def build_generation_request_key(payload: dict[str, Any]) -> str:
     serialized = json.dumps(payload, ensure_ascii=False, sort_keys=True)
     return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
@@ -118,6 +187,7 @@ def build_image_source_context(
         return {}
 
     confirmed_text = (corrected_cover_text or "").strip() or (ocr_text or "").strip()
+    cover_analysis = cover_analysis or {}
     return {
         "image_hash": hashlib.sha256(image_bytes).hexdigest(),
         "image_format": image_format,
@@ -126,7 +196,10 @@ def build_image_source_context(
         "aspect_ratio": round(width / height, 3) if height else 0,
         "ocr_text": (ocr_text or "").strip(),
         "confirmed_cover_text": confirmed_text,
-        "cover_analysis": cover_analysis or {},
+        "cover_analysis": cover_analysis,
+        "content_type": str(cover_analysis.get("content_type", "")).strip(),
+        "visual_scene": str(cover_analysis.get("visual_scene", "")).strip(),
+        "education_value": str(cover_analysis.get("education_value", "")).strip(),
         "analysis_boundary": (
             "当前不传输图片像素给模型；图片结论仅基于 OCR、用户修正文字、"
             "尺寸比例和已有封面分析。"
@@ -254,10 +327,13 @@ def build_publish_version(
     tags: list[str],
     include_action: bool = True,
     include_tags: bool = True,
+    comment_question: str = "",
 ) -> str:
     body_parts = [body.strip()]
     if include_action and action.strip():
         body_parts.append(action.strip())
+    if comment_question.strip() and comment_question.strip() != action.strip():
+        body_parts.append(comment_question.strip())
     sections = [title.strip(), "\n\n".join(part for part in body_parts if part)]
     if include_tags and tags:
         sections.append(" ".join(tags))
@@ -338,6 +414,16 @@ def finalize_generated_note(
     second_review_findings.extend(_risk_rows(action_final, "行动引导"))
     modifications.extend(f"行动引导：{change}" for change in action_changes)
 
+    raw_comment_question = str(generated.get("comment_question", "")).strip()
+    safe_comment_question, comment_initial, comment_final, comment_changes = make_generated_text_safe(
+        raw_comment_question,
+        rules,
+        "正文",
+    )
+    risk_items.extend(_risk_rows(comment_initial, "评论区问题"))
+    second_review_findings.extend(_risk_rows(comment_final, "评论区问题"))
+    modifications.extend(f"评论区问题：{change}" for change in comment_changes)
+
     safe_tags: list[str] = []
     for raw_tag in generated.get("tags", []):
         tag = str(raw_tag).strip()
@@ -368,7 +454,11 @@ def finalize_generated_note(
     primary_title = final_titles[0] if final_titles else ""
     publish_body = "\n\n".join(
         part
-        for part in (safe_body, safe_action if include_action else "")
+        for part in (
+            safe_body,
+            safe_action if include_action else "",
+            safe_comment_question if safe_comment_question != safe_action else "",
+        )
         if part
     )
     publish_text = build_publish_version(
@@ -378,12 +468,14 @@ def finalize_generated_note(
         safe_tags,
         include_action=include_action,
         include_tags=include_tags,
+        comment_question=safe_comment_question,
     )
 
     return {
         "titles": final_titles,
         "body": safe_body,
         "action": safe_action,
+        "comment_question": safe_comment_question,
         "tags": safe_tags,
         "publish_body": publish_body,
         "publish_text": publish_text,

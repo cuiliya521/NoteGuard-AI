@@ -1,79 +1,164 @@
-# AI Reviewer MVP
+# NoteGuard AI
 
-小红书教育内容 AI 初审助手。第一版使用 Python + Streamlit 实现，暂不接真实 AI API，先用本地规则库检测疑似风险词并生成基础改写结果。
+NoteGuard AI 是面向教育行业老板和运营人员的小红书内容运营助手。产品以“找参考爆款 → 看懂成交逻辑 → 生成招生笔记 → 发布前审核”为主流程，同时保留规则管理、案例沉淀和 OCR 图片文字识别能力。
 
-## 当前功能
+## 主要功能
 
-- 标题输入
-- 正文输入
-- 图片上传和预览
-- 规则库风险词检测
-- 输出整体风险提示
-- 输出疑似风险词、出现位置、风险原因、替换建议
-- 基于替换建议生成基础改写结果
+- 标题、正文和封面 OCR 文字的规则审核
+- 问题位置高亮与最小范围替代表达
+- 小红书链接、截图和正文素材导入
+- 爆款成交逻辑拆解与招生笔记生成
+- 封面图片上传、粘贴与中文 OCR
+- 案例库和方法模型沉淀
+- 自定义审核规则管理
+- 创作者资料管理
+- 本地审核历史记录
 
-## 项目结构
+## 环境要求
 
-```text
-ai-reviewer-app/
-├── app.py
-├── requirements.txt
-├── README.md
-├── data/
-│   └── rules.json
-├── services/
-│   ├── __init__.py
-│   ├── rule_checker.py
-│   └── rewriter.py
-└── outputs/
+- Python 3.10 或更高版本，推荐 Python 3.12
+- Windows、macOS 或 Linux
+- 可选：DeepSeek API Key，用于 AI 改写、标题生成和分析功能
+- 可选：PaddleOCR 或 Tesseract，用于自动识别图片文字
+
+没有 API Key 或 OCR 依赖时，应用仍可使用本地规则检查和手动 OCR 文本输入。
+
+## 环境变量配置
+
+项目提供不包含真实凭证的 `.env.example`：
+
+```dotenv
+DEEPSEEK_API_KEY=your_api_key_here
+OPENAI_API_KEY=your_openai_api_key_here
+VISION_MODEL=gpt-4.1-mini
 ```
 
-## Mac 运行步骤
+`OPENAI_API_KEY` 与 `VISION_MODEL` 为可选配置，仅在本地 OCR 无法读取封面文字时启用图片文字理解兜底。本地使用时复制该文件为 `.env`，再填写自己实际使用的 Key。
 
-### 1. 进入项目目录
+Windows PowerShell：
+
+```powershell
+Copy-Item .env.example .env
+```
+
+macOS/Linux：
 
 ```bash
-cd "ai-reviewer-app"
+cp .env.example .env
 ```
 
-### 2. 创建虚拟环境
+编辑 `.env`：
+
+```dotenv
+DEEPSEEK_API_KEY=你的真实_API_Key
+```
+
+`.env` 已被 `.gitignore` 忽略。不要提交、截图或分享真实 API Key。
+
+## 本地启动
+
+### Windows PowerShell
+
+```powershell
+cd "NoteGuard-AI"
+py -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+powershell -ExecutionPolicy Bypass -File .\start.ps1
+```
+
+### macOS/Linux
 
 ```bash
-python3 -m venv ".venv"
+cd "NoteGuard-AI"
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+python -m streamlit run app.py
 ```
 
-### 3. 激活虚拟环境
-
-```bash
-source ".venv/bin/activate"
-```
-
-### 4. 安装依赖
-
-```bash
-pip install -r "requirements.txt"
-```
-
-### 5. 启动应用
-
-```bash
-streamlit run "app.py"
-```
-
-启动后浏览器会自动打开页面。如果没有自动打开，可以访问终端里显示的本地地址，通常是：
+启动后访问终端显示的地址，默认通常为：
 
 ```text
 http://localhost:8501
 ```
 
-## 使用说明
+语法和测试检查：
 
-1. 输入小红书标题。
-2. 输入正文、视频脚本或封面文案。
-3. 可选上传图片查看预览。
-4. 点击“开始审核”。
-5. 查看风险提示和基础改写结果。
+```bash
+python -m py_compile app.py
+python -m unittest discover -s tests -v
+```
 
-## 注意事项
+## Streamlit Community Cloud Secrets
 
-当前版本只做疑似风险提示，不做最终违规判定。审核结果需要人工复核后再使用。
+部署到 Streamlit Community Cloud 时，不要上传 `.env`。在应用部署页面的 **Advanced settings → Secrets** 中配置：
+
+```toml
+DEEPSEEK_API_KEY = "你的真实_API_Key"
+```
+
+根级 Secret 会作为环境变量提供给应用。修改 Secrets 后如未立即生效，请重启应用。
+
+部署时建议：
+
+1. 入口文件选择 `app.py`。
+2. Python 版本选择 3.12。
+3. 确认仓库根目录包含 `requirements.txt` 和 `packages.txt`。
+4. 通过 Cloud Secrets 配置 Key，不要把真实 Key 写入代码或仓库。
+
+公开 Demo 使用说明：
+
+- Community Cloud 的应用网址可以长期访问，但免费实例空闲后可能休眠，首次打开需要等待唤醒。
+- 本地 JSON 文件不是云端持久数据库，应用重启或重新部署后，访客新增的历史、案例和业务档案可能丢失。
+- 公共 Demo 不应输入真实客户资料、未公开业务数据或其他敏感信息。
+
+## OCR 依赖
+
+图片会依次经过压缩、放大、灰度、对比度增强和阈值处理，并进行多轮 OCR。未安装本地 OCR 或多轮识别仍无结果时，如已配置视觉模型，应用会继续读取封面主标题、小字、标签和角标；两种来源统一写入 `cover_text`，视觉结果优先。
+
+### PaddleOCR
+
+Python 3.10–3.13 会根据 `requirements.txt` 安装：
+
+```text
+paddlepaddle>=3.0,<4
+paddleocr>=3.3,<4
+```
+
+PaddleOCR 依赖较大，首次安装、模型下载和冷启动可能耗时较长。
+
+### Tesseract
+
+Python 包 `pytesseract` 只是调用接口，还需要安装 Tesseract 程序和中文 `chi_sim` 语言包。
+
+Windows：
+
+1. 安装 Tesseract OCR。
+2. 安装或勾选 `chi_sim` 中文语言数据。
+3. 将 Tesseract 安装目录加入系统 `PATH`。
+4. 重新打开终端后运行 `tesseract --version` 验证。
+
+Debian/Ubuntu：
+
+```bash
+sudo apt update
+sudo apt install tesseract-ocr tesseract-ocr-chi-sim
+```
+
+Streamlit Community Cloud 会读取仓库根目录的 `packages.txt` 并安装这两个系统包。
+
+macOS：
+
+```bash
+brew install tesseract tesseract-lang
+```
+
+## 数据与安全说明
+
+- 上传图片仅在当前 Streamlit 会话内处理，不会由应用写入图片文件。
+- 历史记录、规则和创作者资料使用本地 JSON 文件，适合本地单用户或受控 Demo。
+- 公开多用户部署前，应改用带用户隔离的持久存储并限制规则管理权限。
+- AI 和 OCR 结果仅用于发布前辅助检查，最终内容应由用户人工确认。
