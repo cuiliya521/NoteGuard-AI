@@ -16,13 +16,14 @@ SEVERITY_LABELS = {
 VALID_SEVERITIES = set(SEVERITY_LABELS)
 
 SAFE_TERMS = ["1v1", "一对一", "手把手", "线上", "试听"]
+STYLE_ONLY_CATEGORIES = {"普通教育表达"}
 CONTEXT_EFFECT_TERMS = ["保证", "保过", "满分", "逆袭", "提分", "出分", "分数"]
 RESULT_PROMISE_PATTERNS = [
     (
         re.compile(r"(?:\d+|[一二三四五六七八九十]+)天(?:提高|提升|增加|涨)(?:\d+|[一二三四五六七八九十]+)分"),
         "效果承诺",
         "疑似短期量化成绩结果承诺。",
-        "学习状态改善",
+        "阶段性学习调整记录",
         "high",
     ),
 ]
@@ -167,7 +168,11 @@ def load_rules(rule_path: Path) -> list[Rule]:
             severity=item["severity"],
         )
         for item in records
-        if item["enabled"] and not is_safe_term(item["term"])
+        if (
+            item["enabled"]
+            and not is_safe_term(item["term"])
+            and item["category"] not in STYLE_ONLY_CATEGORIES
+        )
     ]
 
 
@@ -273,7 +278,15 @@ def check_text(title: str, body: str, rules: list[Rule]) -> list[Finding]:
     ordered_rules = sorted(rules, key=lambda item: len(item.term), reverse=True)
 
     for position, text in fields:
-        occupied_ranges: list[tuple[int, int]] = []
+        pattern_findings = build_pattern_findings(
+            text=text,
+            position=position,
+            existing_findings=[],
+        )
+        findings.extend(pattern_findings)
+        occupied_ranges: list[tuple[int, int]] = [
+            (item.start, item.end) for item in pattern_findings
+        ]
         for rule in ordered_rules:
             start = 0
             while True:
@@ -305,13 +318,6 @@ def check_text(title: str, body: str, rules: list[Rule]) -> list[Finding]:
                 occupied_ranges.append((index, end))
                 start = end
 
-        findings.extend(
-            build_pattern_findings(
-                text=text,
-                position=position,
-                existing_findings=findings,
-            )
-        )
         findings.extend(
             build_context_findings(
                 text=text,

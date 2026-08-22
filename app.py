@@ -301,6 +301,74 @@ EXPERIENCE_BODY = """孩子数学一直拖后腿，
 帮助孩子找到适合自己的学习方法。
 一个月后成绩提升明显，
 很多家长都来咨询。"""
+PUBLIC_DEMO = os.getenv("NOTEGUARD_PUBLIC_DEMO", "1").strip().lower() not in {
+    "0",
+    "false",
+    "no",
+}
+DEMO_BUSINESS_PROFILE = {
+    "id": "public-demo-profile",
+    "product_name": "初中数学学习规划",
+    "brand_name": "林老师（演示账号）",
+    "target_user": "初一至初三、数学基础薄弱的学生家长",
+    "usage_scenario": "学情诊断与错题复盘",
+    "common_pain_points": "同类题反复出错，盲目刷题仍找不到原因",
+    "core_selling_point": "先定位知识点与审题习惯，再给出阶段性学习建议",
+    "conversion_method": "预约一次公开演示用学情沟通",
+}
+DEMO_HISTORY_RECORD = {
+    "id": "public-demo-history",
+    "time": "演示记录",
+    "title": "30天提高50分？先看看学习方法是否适合",
+    "body": "这是一条脱敏演示内容，用于展示风险定位和修改建议。",
+    "safety_score": 80,
+    "risk_level": "高风险",
+    "risk_items": [
+        {
+            "风险词": "30天提高50分",
+            "风险等级": "高风险",
+            "分类": "效果承诺",
+            "原因": "疑似短期量化成绩结果承诺。",
+            "建议替换": "阶段性学习调整记录",
+            "位置": "标题",
+        }
+    ],
+    "safe_title": "阶段性学习调整记录：先看看学习方法是否适合",
+    "safe_body": "这是一条脱敏演示内容，用于展示风险定位和修改建议。",
+    "line_review_items": [],
+    "line_review_statuses": {},
+    "demo_record": True,
+}
+
+
+def get_visible_history() -> list[dict]:
+    if not PUBLIC_DEMO:
+        return load_recent_history(10)
+    session_records = st.session_state.setdefault("session_history", [])
+    return [*session_records[:9], DEMO_HISTORY_RECORD.copy()]
+
+
+def upsert_visible_history(record: dict) -> None:
+    if not PUBLIC_DEMO:
+        upsert_history_record(record)
+        return
+    records = st.session_state.setdefault("session_history", [])
+    records[:] = [item for item in records if item.get("id") != record.get("id")]
+    records.insert(0, record)
+    del records[10:]
+
+
+def open_workspace_page(page: str) -> None:
+    st.session_state["workspace_page"] = page
+
+
+def restore_history_for_review(record: dict) -> None:
+    st.session_state["title_input"] = str(record.get("title") or "")
+    st.session_state["body_input"] = str(record.get("body") or "")
+    st.session_state["draft_title"] = st.session_state["title_input"]
+    st.session_state["draft_body"] = st.session_state["body_input"]
+    st.session_state["review_started"] = False
+    st.session_state["workspace_page"] = "内容审核中心"
 
 
 @st.cache_data
@@ -606,9 +674,9 @@ def render_styles() -> None:
         """
         <style>
         :root {
-            --ng-primary: #ef4444;
-            --ng-primary-hover: #dc2626;
-            --ng-primary-soft: #fef2f2;
+            --ng-primary: #2563eb;
+            --ng-primary-hover: #1d4ed8;
+            --ng-primary-soft: #eff6ff;
             --ng-text: #1f2937;
             --ng-muted: #64748b;
             --ng-subtle: #98a2b3;
@@ -3227,9 +3295,9 @@ def _render_pre_publish_report_content(report: dict) -> None:
 
 def render_rule_management() -> None:
     render_page_hero(
-        "规则管理",
-        "维护动态审核规则",
-        "新增、编辑或停用规则后，内容审核会在下一次运行时自动读取最新规则库。",
+        "审核规则中心",
+        "看懂 NoteGuard 如何稳定识别风险",
+        "明确规则负责稳定命中，AI 负责理解上下文与生成自然建议。",
     )
 
     notice = st.session_state.pop("rule_manager_notice", "")
@@ -3243,23 +3311,63 @@ def render_rule_management() -> None:
         return
 
     with st.container(border=True):
+        st.markdown("### 规则引擎 + AI 的分工")
+        method_columns = st.columns(2, gap="medium")
+        method_columns[0].info("**规则引擎**\n\n识别效果承诺、绝对化表达、联系方式等明确风险，保证结果稳定可解释。")
+        method_columns[1].info("**AI 语义复核**\n\n理解上下文并给出自然修改方向；最终结果仍需运营人员确认。")
+        if PUBLIC_DEMO:
+            st.caption("公开 Demo 为只读模式，访客不能新增、修改或删除审核规则。")
+
+    with st.container(border=True):
         st.markdown('<div class="module-eyebrow">当前规则库</div>', unsafe_allow_html=True)
         st.markdown('<div class="module-title">审核规则</div>', unsafe_allow_html=True)
-        enabled_count = sum(record["enabled"] for record in records)
-        summary_left, summary_right = st.columns(2)
-        summary_left.metric("规则总数", len(records))
-        summary_right.metric("启用规则", enabled_count)
+        compliance_records = [record for record in records if record["category"] != "普通教育表达"]
+        style_records = [record for record in records if record["category"] == "普通教育表达"]
+        summary_left, summary_middle, summary_right = st.columns(3)
+        summary_left.metric("合规规则", len(compliance_records))
+        summary_middle.metric("表达建议", len(style_records))
+        summary_right.metric("启用规则", sum(record["enabled"] for record in records))
+        filter_left, filter_right = st.columns([1.5, 1])
+        rule_query = filter_left.text_input(
+            "搜索规则",
+            placeholder="搜索关键词、分类或风险原因",
+            key="rule_readonly_query",
+        ).strip().lower()
+        categories = ["全部", *sorted({record["category"] for record in records})]
+        selected_category = filter_right.selectbox(
+            "按分类筛选",
+            categories,
+            key="rule_readonly_category",
+        )
+        visible_records = [
+            record
+            for record in records
+            if (selected_category == "全部" or record["category"] == selected_category)
+            and (
+                not rule_query
+                or rule_query in " ".join(
+                    str(record.get(field, "")).lower()
+                    for field in ("term", "category", "reason", "suggestion")
+                )
+            )
+        ]
         table_rows = [
             {
                 "关键词": record["term"],
-                "等级": get_severity_label(record["severity"]),
+                "类型": "表达优化" if record["category"] == "普通教育表达" else "合规风险",
+                "等级": "不计分" if record["category"] == "普通教育表达" else get_severity_label(record["severity"]),
                 "分类": record["category"],
+                "判断依据": record["reason"],
                 "修改建议": record["suggestion"] or "建议删除、弱化或重新表述",
                 "启用状态": "启用" if record["enabled"] else "停用",
             }
-            for record in records
+            for record in visible_records
         ]
         st.dataframe(table_rows, use_container_width=True, hide_index=True)
+        st.caption(f"当前显示 {len(table_rows)} 条规则；表达优化建议不参与合规风险评分。")
+
+    if PUBLIC_DEMO:
+        return
 
     with st.container(border=True):
         st.markdown('<div class="module-eyebrow">规则操作</div>', unsafe_allow_html=True)
@@ -3395,12 +3503,20 @@ def render_rule_management() -> None:
 
 
 def render_history_section() -> None:
-    history_records = load_recent_history(10)
+    history_records = get_visible_history()
 
     with st.container(border=True):
         st.markdown("### 我的记录")
+        if PUBLIC_DEMO:
+            st.info("公开 Demo 仅显示你当前会话产生的记录，并附带一条脱敏演示记录；关闭会话后不会长期保存。")
         if not history_records:
-            st.info("暂无审核历史。完成一次审核后，记录会自动保存在本地。")
+            st.info("本次会话还没有审核记录。完成一次审核后，可在这里继续修改或重新检查。")
+            st.button(
+                "前往内容审核中心",
+                type="primary",
+                on_click=open_workspace_page,
+                args=("内容审核中心",),
+            )
             return
 
         def record_type(record: dict) -> str:
@@ -3419,12 +3535,15 @@ def render_history_section() -> None:
         ]
 
         for record in filtered_records:
-            columns = st.columns([3, 1.2, 1.2, 1])
+            columns = st.columns([3, 1.2, 1.2, 1.2])
             title_summary = str(record.get("title") or "未填写标题")[:36]
             columns[0].markdown(f"**{title_summary}**")
-            columns[0].caption(f"{record_type(record)} · {record.get('time', '')}")
-            columns[1].write(f"内容质量：{record.get('safety_score', 0)}/100")
-            columns[2].write(str(record.get("risk_level", "未知")))
+            record_badge = " · 脱敏演示" if record.get("demo_record") else ""
+            columns[0].caption(f"{record_type(record)} · {record.get('time', '')}{record_badge}")
+            columns[1].metric("合规安全分", f"{record.get('safety_score', 0)}/100")
+            columns[2].metric("风险等级", str(record.get("risk_level", "未知")))
+            risk_items = record.get("risk_items", [])
+            columns[2].caption(f"命中 {len(risk_items)} 项")
             if columns[3].button("查看详情", key=f"history_view_{record.get('id')}"):
                 st.session_state["selected_history_id"] = record.get("id")
 
@@ -3441,6 +3560,35 @@ def render_history_section() -> None:
             return
 
         st.markdown("#### 历史详情")
+        detail_actions = st.columns(3)
+        detail_actions[0].button(
+            "返回修改",
+            type="primary",
+            use_container_width=True,
+            on_click=restore_history_for_review,
+            args=(selected_record,),
+            key=f"history_edit_{selected_record.get('id')}",
+        )
+        detail_actions[1].button(
+            "重新审核",
+            use_container_width=True,
+            on_click=restore_history_for_review,
+            args=(selected_record,),
+            key=f"history_recheck_{selected_record.get('id')}",
+        )
+        safe_copy = "\n".join(
+            part for part in (
+                str(selected_record.get("safe_title") or ""),
+                str(selected_record.get("safe_body") or ""),
+            ) if part
+        )
+        with detail_actions[2]:
+            render_clipboard_button(
+                safe_copy,
+                f"history-copy-{selected_record.get('id')}",
+                "复制修改建议",
+                "修改建议已复制",
+            )
         st.markdown("**原内容**")
         st.write(f"标题：{selected_record.get('title', '')}")
         st.write(f"正文：{selected_record.get('body', '')}")
@@ -3448,10 +3596,10 @@ def render_history_section() -> None:
         if image_ocr_text:
             st.write(f"图片识别文字：{image_ocr_text}")
 
-        st.markdown("**内容质量评估**")
+        st.markdown("**合规评估**")
         st.write(
-            f"内容质量评估：{selected_record.get('safety_score', 0)}/100"
-            f"｜合规提示等级：{selected_record.get('risk_level', '未知')}"
+            f"合规安全分：{selected_record.get('safety_score', 0)}/100"
+            f"｜风险等级：{selected_record.get('risk_level', '未知')}"
         )
         risk_items = selected_record.get("risk_items", [])
         if risk_items:
@@ -3466,7 +3614,11 @@ def render_history_section() -> None:
             for index, item in enumerate(line_review_items, start=1):
                 status = line_review_statuses.get(item.get("item_id", ""), "pending")
                 status_label = "已处理" if status == "handled" else "暂未处理"
-                with st.expander(f"问题 {index} · {status_label}"):
+                issue_name = str(item.get("category") or item.get("reason") or "待处理问题")
+                with st.expander(
+                    f"问题 {index} · {issue_name} · {status_label}",
+                    expanded=index == 1,
+                ):
                     st.write(f"原句：{item.get('original_text', '')}")
                     st.write(f"修改原因：{item.get('reason', '')}")
                     st.write(f"建议修改为：{item.get('replacement_text', '')}")
@@ -5822,16 +5974,25 @@ def render_content_growth_breakdown_v1(
     own_profile: dict,
 ) -> None:
     """Turn the reference analysis into an immediately usable adaptation direction."""
-    target_user = str(suggestion.get("target_user") or "目标家长待确认").strip()
-    pain_point = str(
-        suggestion.get("common_pain_points") or "家长正在面对的具体问题待确认"
-    ).strip()
-    selling_point = str(
-        suggestion.get("core_selling_point") or "内容提供的解决价值待确认"
-    ).strip()
-    conversion = str(
-        suggestion.get("conversion_method") or "咨询或低门槛体验"
-    ).strip()
+    def usable(value: object, fallback: str) -> str:
+        text = str(value or "").strip()
+        if not text or "未体现" in text or text in {"无", "暂无", "不明确"}:
+            return fallback
+        return text
+
+    target_user = usable(suggestion.get("target_user"), "该案例未明确说明目标人群")
+    pain_point = usable(
+        suggestion.get("common_pain_points"),
+        "该案例未提供足够信息来判断家长痛点",
+    )
+    selling_point = usable(
+        suggestion.get("core_selling_point"),
+        "该案例尚未形成清晰的继续阅读理由",
+    )
+    conversion = usable(
+        suggestion.get("conversion_method"),
+        "该案例未提供明确的转化方式",
+    )
     own_business = str(
         own_profile.get("product_name") or own_profile.get("usage_scenario") or "你的课程"
     ).strip()
@@ -5841,19 +6002,29 @@ def render_content_growth_breakdown_v1(
     ).strip()
     title_direction = f"{own_user}遇到{own_pain}？先看{own_business}里的这一步"
 
-    st.markdown("## 🔥 为什么它能招生？")
+    own_business = usable(own_business, "当前演示业务")
+    own_user = usable(own_user, "目标学生家长")
+    own_pain = usable(own_pain, "具体学习问题")
+    st.markdown("## 第二步 · 拆解结果")
     with st.container(border=True):
-        st.write(f"**家长痛点：** {pain_point}")
-        st.write(f"**成交钩子：** {target_user}会因为“{selling_point}”继续看下去。")
-        st.write(
-            f"**内容结构：** 痛点共鸣 → 老师背书 → 方法证明 → "
-            f"服务介绍 → {conversion}"
-        )
-        st.write(
-            f"**我的课程如何借：** 用“{own_business}”解决“{own_pain}”，"
-            f"标题可以从“{title_direction}”开始。"
-        )
-        st.caption("只复制人群、痛点和成交结构，不照搬原案例经历、身份与数据。")
+        result_columns = st.columns(3, gap="medium")
+        with result_columns[0]:
+            st.markdown("### ✅ 值得借鉴")
+            st.write(f"**目标人群：** {target_user}")
+            st.write(f"**用户问题：** {pain_point}")
+            st.write(f"**继续阅读理由：** {selling_point}")
+        with result_columns[1]:
+            st.markdown("### ⚠️ 不建议照搬")
+            st.write("不要复制原案例的老师身份、学员经历、成绩数据或未经验证的效果描述。")
+            if "未提供" in conversion or "未明确" in conversion:
+                st.write("该案例没有清晰转化路径，需要结合自己的真实服务重新设计。")
+            else:
+                st.write(f"原案例转化方式仅作参考：{conversion}")
+        with result_columns[2]:
+            st.markdown("### 🎯 如何用于我的账号")
+            st.write(f"围绕 **{own_business}**，先回应 **{own_pain}**。")
+            st.write(f"标题方向：{title_direction}")
+        st.caption("只复制人群、痛点和内容结构；缺失信息不会被当作事实用于生成。")
 
 
 def render_content_growth_assistant_v1(profile: dict[str, str]) -> None:
@@ -5881,7 +6052,13 @@ def render_content_growth_assistant_v1(profile: dict[str, str]) -> None:
 
     business_profiles = load_business_profiles(BUSINESS_PROFILE_PATH)
     profile_map = {str(item.get("id")): item for item in business_profiles}
-    active_profile = next(iter(profile_map.values()), {})
+    active_profile = next(
+        iter(profile_map.values()),
+        DEMO_BUSINESS_PROFILE.copy() if PUBLIC_DEMO else {},
+    )
+    if PUBLIC_DEMO:
+        active_profile = DEMO_BUSINESS_PROFILE.copy()
+        st.info("当前使用虚构演示账号：林老师（演示账号）· 初中数学学习规划。你可以在生成前临时修改。")
 
     st.markdown("## 第一步 · 找参考爆款")
     st.write("把你觉得好的内容丢进来，链接、截图或正文任选一种。")
@@ -5989,36 +6166,57 @@ def render_content_growth_assistant_v1(profile: dict[str, str]) -> None:
         ).encode("utf-8")
     ).hexdigest()
 
-    if has_material and st.session_state.get("content_lab_material_analysis_key") != material_key:
-        with st.spinner("正在拆解这篇内容的选题、用户心理和成交结构..."):
-            suggestion, material_error = analyze_content_lab_material(
-                title=material_title,
-                body=material_body,
-                ocr_text=material_ocr_text,
-                image_bytes=image_bytes,
-                image_width=int(
-                    st.session_state.get("content_lab_material_image_width") or 0
-                ),
-                image_height=int(
-                    st.session_state.get("content_lab_material_image_height") or 0
-                ),
-                image_format=str(
-                    st.session_state.get("content_lab_material_image_format") or ""
-                ),
-                creator_profile=profile,
-                fallback_profile=active_profile,
-            )
-        st.session_state["content_lab_material_analysis_key"] = material_key
-        st.session_state["content_lab_material_suggestion"] = suggestion
-        st.session_state["content_lab_material_error"] = material_error
-        st.session_state.pop("content_lab_generated_draft", None)
-        for field, value in suggestion.items():
-            saved_value = str(active_profile.get(field) or "").strip()
-            st.session_state[f"content_lab_confirm_{field}"] = saved_value or value
+    analysis_is_current = (
+        has_material
+        and st.session_state.get("content_lab_material_analysis_key") == material_key
+        and isinstance(st.session_state.get("content_lab_material_suggestion"), dict)
+    )
+    if has_material and not analysis_is_current:
+        st.caption("内容已准备好。点击后才会开始 AI 拆解，不会因离开输入框自动运行。")
+        start_breakdown = st.button(
+            "开始拆解同行内容",
+            type="primary",
+            use_container_width=True,
+            key=f"start_content_breakdown_{material_key[:10]}",
+        )
+        if start_breakdown:
+            with st.status("正在拆解选题、用户心理和成交结构...", expanded=True) as status:
+                st.write("正在读取标题、正文与封面信息")
+                suggestion, material_error = analyze_content_lab_material(
+                    title=material_title,
+                    body=material_body,
+                    ocr_text=material_ocr_text,
+                    image_bytes=image_bytes,
+                    image_width=int(
+                        st.session_state.get("content_lab_material_image_width") or 0
+                    ),
+                    image_height=int(
+                        st.session_state.get("content_lab_material_image_height") or 0
+                    ),
+                    image_format=str(
+                        st.session_state.get("content_lab_material_image_format") or ""
+                    ),
+                    creator_profile=profile,
+                    fallback_profile=active_profile,
+                )
+                st.write("正在整理可借鉴点与不建议照搬的内容")
+                status.update(label="拆解完成", state="complete", expanded=False)
+            st.session_state["content_lab_material_analysis_key"] = material_key
+            st.session_state["content_lab_material_suggestion"] = suggestion
+            st.session_state["content_lab_material_error"] = material_error
+            st.session_state.pop("content_lab_generated_draft", None)
+            for field, value in suggestion.items():
+                saved_value = str(active_profile.get(field) or "").strip()
+                st.session_state[f"content_lab_confirm_{field}"] = saved_value or value
+            st.rerun()
 
-    suggestion = st.session_state.get("content_lab_material_suggestion")
+    suggestion = (
+        st.session_state.get("content_lab_material_suggestion")
+        if analysis_is_current
+        else None
+    )
     if not has_material:
-        st.caption("添加一篇同行内容后，AI拆解会自动出现在这里。")
+        st.caption("添加一篇同行内容后，点击“开始拆解同行内容”查看结果。")
     elif isinstance(suggestion, dict):
         st.markdown("## 第二步 · AI告诉我为什么它能招生")
         current_profile = {
@@ -6768,6 +6966,19 @@ def render_viral_case_library(key_prefix: str) -> None:
     if notice:
         st.success(notice)
     saved_cases = deduplicate_viral_cases_for_display(load_viral_cases(VIRAL_CASE_LIBRARY_PATH))
+    if not saved_cases:
+        with st.container(border=True):
+            st.markdown("### 还没有保存案例")
+            st.write("先在招生笔记助手完成一次同行内容拆解，再把值得复用的结构沉淀到这里。")
+            st.button(
+                "前往招生笔记助手体验",
+                type="primary",
+                use_container_width=True,
+                on_click=open_workspace_page,
+                args=("招生笔记助手",),
+                key=f"{key_prefix}_open_growth_assistant",
+            )
+        return
     show_case_library = st.toggle(
         f"展开案例库 · {len(saved_cases)}",
         value=False,
@@ -7445,6 +7656,7 @@ def main() -> None:
             )
             render_review_loading(progress_placeholder, completion_placeholder)
             st.session_state["is_reviewing"] = False
+            st.session_state["scroll_to_review_results"] = True
 
     image_text = (
         st.session_state.get("cover_text", "")
@@ -7552,7 +7764,7 @@ def main() -> None:
 
         review_run_id = st.session_state.get("review_run_id") or uuid4().hex
         st.session_state["review_run_id"] = review_run_id
-        upsert_history_record(
+        upsert_visible_history(
             create_history_record(
                 record_id=review_run_id,
                 title=title,
@@ -7573,6 +7785,21 @@ def main() -> None:
         safe_term_hits = build_safe_term_hits(
             title=title,
             body=f"{body}\n{image_text if has_image else ''}",
+        )
+
+    st.markdown('<div id="review-results"></div>', unsafe_allow_html=True)
+    if st.session_state.pop("scroll_to_review_results", False):
+        st.toast("审核完成，已定位到审核结论。", icon="✅")
+        components.html(
+            """
+            <script>
+            setTimeout(() => {
+              const target = window.parent.document.getElementById("review-results");
+              if (target) target.scrollIntoView({ behavior: "smooth", block: "start" });
+            }, 150);
+            </script>
+            """,
+            height=0,
         )
 
     with st.container(border=True):

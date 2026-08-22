@@ -76,7 +76,7 @@ class NoteGeneratorTests(unittest.TestCase):
 
         result = finalize_generated_note(note, self.rules, max_body_chars=700)
 
-        self.assertEqual(result["comment_question"], "你家娃最常在哪类题目上卡住？")
+        self.assertEqual(result["comment_question"], "你家孩子最常在哪类题目上卡住？")
         self.assertIn(result["comment_question"], result["publish_text"])
 
     def test_course_poster_uses_course_promotion_structure(self) -> None:

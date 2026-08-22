@@ -31,6 +31,7 @@ NoteGuard AI 是面向教育行业老板和运营人员的小红书内容运营�
 DEEPSEEK_API_KEY=your_api_key_here
 OPENAI_API_KEY=your_openai_api_key_here
 VISION_MODEL=gpt-4.1-mini
+NOTEGUARD_PUBLIC_DEMO=1
 ```
 
 `OPENAI_API_KEY` 与 `VISION_MODEL` 为可选配置，仅在本地 OCR 无法读取封面文字时启用图片文字理解兜底。本地使用时复制该文件为 `.env`，再填写自己实际使用的 Key。
@@ -101,6 +102,8 @@ DEEPSEEK_API_KEY = "你的真实_API_Key"
 ```
 
 根级 Secret 会作为环境变量提供给应用。修改 Secrets 后如未立即生效，请重启应用。
+
+公开作品集部署建议保留 `NOTEGUARD_PUBLIC_DEMO=1`：审核历史仅保存在访客当前会话，规则中心为只读，并自动使用明确标注的虚构演示档案。本地受控环境如需管理规则，可设置为 `0`。
 
 部署时建议：
 

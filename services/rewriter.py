@@ -55,6 +55,7 @@ class LineReviewItem:
 
 PHRASE_REPLACEMENTS = {
     "数学思维": "数理思维",
+    "差生逆袭秘籍": "基础薄弱学生的学习方法",
 }
 
 

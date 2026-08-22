@@ -138,6 +138,11 @@ class AppSmokeTests(unittest.TestCase):
             app.run(timeout=30)
             next(
                 button for button in app.button
+                if button.label == "开始拆解同行内容"
+            ).click()
+            app.run(timeout=30)
+            next(
+                button for button in app.button
                 if button.label == "🔥 生成我的招生笔记"
             ).click()
             app.run(timeout=30)
@@ -159,11 +164,10 @@ class AppSmokeTests(unittest.TestCase):
             ),
             1,
         )
-        self.assertTrue(any("为什么它能招生" in item.value for item in app.markdown))
-        self.assertTrue(any("家长痛点：" in item.value for item in app.markdown))
-        self.assertTrue(any("成交钩子：" in item.value for item in app.markdown))
-        self.assertTrue(any("内容结构：" in item.value for item in app.markdown))
-        self.assertTrue(any("我的课程如何借：" in item.value for item in app.markdown))
+        self.assertTrue(any("拆解结果" in item.value for item in app.markdown))
+        self.assertTrue(any("值得借鉴" in item.value for item in app.markdown))
+        self.assertTrue(any("不建议照搬" in item.value for item in app.markdown))
+        self.assertTrue(any("如何用于我的账号" in item.value for item in app.markdown))
         self.assertTrue(any("我的招生笔记" in item.value for item in app.markdown))
         self.assertTrue(any(button.label == "一键审核" for button in app.button))
         visible_text = "\n".join(item.value for item in app.markdown)

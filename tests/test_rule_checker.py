@@ -30,6 +30,20 @@ class RuleCheckerTests(unittest.TestCase):
         )
         self.assertTrue(all("Demo" not in record["term"] for record in records))
 
+    def test_style_only_education_terms_do_not_create_compliance_findings(self) -> None:
+        rules = load_rules(RULES_PATH)
+
+        self.assertEqual(check_text("孩子数学基础薄弱", "课程适合学生", rules), [])
+
+    def test_full_result_promise_pattern_wins_over_short_terms(self) -> None:
+        findings = check_text("数学差生逆袭秘籍！30天提高50分", "", load_rules(RULES_PATH))
+        terms = [item.term for item in findings]
+
+        self.assertIn("差生", terms)
+        self.assertIn("逆袭", terms)
+        self.assertIn("30天提高50分", terms)
+        self.assertNotIn("提分", terms)
+
     def test_rule_add_disable_and_delete(self) -> None:
         with TemporaryDirectory() as directory:
             rule_path = Path(directory) / "data" / "rules.json"
