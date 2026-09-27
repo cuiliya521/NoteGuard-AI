@@ -1,6 +1,24 @@
 # NoteGuard AI
 
-NoteGuard AI 是面向教育行业老板和运营人员的小红书内容运营助手。产品以“找参考爆款 → 看懂成交逻辑 → 生成招生笔记 → 发布前审核”为主流程，同时保留规则管理、案例沉淀和 OCR 图片文字识别能力。
+面向教育机构和内容运营人员的小红书招生内容助手：把参考内容拆解、招生笔记生成与发布前审核放进同一条工作流，帮助运营人员更快发现内容风险并形成可复用的内容资产。
+
+**[在线体验 Demo](https://noteguard-ai-jwmmq9gayaddm6qkrey3cn.streamlit.app/)** · 免费实例休眠时，点击页面上的唤醒按钮并稍等片刻。
+
+**我的工作：** 围绕教育内容运营的实际流程，参与需求分析、功能流程与审核规则设计、Prompt / AI 能力应用及产品迭代。开发过程中使用了 AI 辅助。
+
+![NoteGuard AI 内容审核中心界面](noteguard-audit.jpg)
+
+### 三步体验
+
+1. 打开 Demo，在「内容审核中心」点击「体验 Demo」，载入脱敏示例。
+2. 查看标题、正文和封面文字的规则命中、问题定位及修改建议。
+3. 切到「招生笔记助手」体验参考内容拆解与笔记生成流程；在「历史与资产」「审核规则中心」了解记录沉淀和规则范围。
+
+### 产品思路与我的工作
+
+教育内容运营需要同时处理参考素材、招生表达和发布前风险，流程分散且容易重复劳动。规则检查负责可明确判断的风险表达、命中位置与可解释结果；大模型在配置 API Key 的环境下辅助内容分析、生成与改写。公开 Demo 的「体验 Demo」使用脱敏示例结果，**不调用真实 AI API**。项目定位为可运行的产品原型，代码实现使用了 AI 辅助；未涉及模型训练或微调。
+
+当前核心模块：**内容审核中心、招生笔记助手、历史与资产、审核规则中心**。以下是功能与部署细节。
 
 ## 主要功能
 
@@ -66,7 +84,7 @@ py -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
-powershell -ExecutionPolicy Bypass -File .\start.ps1
+python -m streamlit run app.py
 ```
 
 ### macOS/Linux
