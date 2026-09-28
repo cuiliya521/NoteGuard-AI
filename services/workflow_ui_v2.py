@@ -80,6 +80,7 @@ def render_workflow_v2(rules: list) -> None:
         st.text(state.original_body)
     with right:
         st.markdown("**建议稿（待人工决定）**")
+        st.caption("AI修改遵循最小修改原则，不新增原文未提供的业务事实，请人工确认最终内容。")
         st.text(state.suggestion.title)
         st.text(state.suggestion.body)
         st.caption(f"来源：{state.suggestion.source}。AI 原始建议理由（事实需人工核对）：{state.suggestion.reason}" if state.suggestion.source == "LLM" else f"来源：{state.suggestion.source}。{state.suggestion.reason}")

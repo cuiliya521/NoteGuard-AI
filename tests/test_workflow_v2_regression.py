@@ -13,6 +13,21 @@ CLEAR = lambda title, body: SemanticReview(available=True)
 
 
 class WorkflowRegressionTests(unittest.TestCase):
+    def test_rule_replacements_are_not_sent_as_business_facts(self):
+        with patch("services.workflow_ai_v2._complete", return_value={
+            "title": "初二数学", "body": "", "reason": "删除承诺，正文需运营确认事实后补充。",
+        }) as complete:
+            state = start_workflow("初二数学保证提分", "30天保证提分50分，十万家庭验证有效",
+                                   RULES, CLEAR, make_draft)
+        payload = complete.call_args.args[1]
+        self.assertTrue(payload["rule_findings"])
+        self.assertTrue(all("suggestion" not in item for item in payload["rule_findings"]))
+        self.assertEqual(state.suggestion.title, "初二数学")
+        self.assertEqual(state.suggestion.body, "")
+        with self.assertRaisesRegex(ValueError, "确认版正文为空"):
+            decide_workflow(state, "accept", CLEAR)
+        self.assertEqual(state.path, "needs_decision")
+
     def test_candidate_cannot_drop_a_field_that_was_present_in_original(self):
         state = start_workflow("保证提分", "原文正文", RULES, CLEAR,
                                lambda *args: Draft("学习支持", "建议正文", "原始理由", "LLM"))
