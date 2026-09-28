@@ -80,7 +80,10 @@ def start_workflow(
                          "needs_decision", reason, suggestion=suggestion)
 
 
-def decide_workflow(state: WorkflowState, decision: str, semantic_reviewer: SemanticReviewer) -> WorkflowState:
+def decide_workflow(
+    state: WorkflowState, decision: str, semantic_reviewer: SemanticReviewer,
+    confirmed_draft: Draft | None = None,
+) -> WorkflowState:
     if state.path != "needs_decision" or state.suggestion is None:
         raise ValueError("当前没有待确认的修改建议。")
     if decision == "reject":
@@ -89,9 +92,13 @@ def decide_workflow(state: WorkflowState, decision: str, semantic_reviewer: Sema
                        final_findings=state.original_findings, final_semantic=state.semantic)
     if decision != "accept":
         raise ValueError("未知的用户决策。")
-    draft = state.suggestion
+    draft = confirmed_draft if confirmed_draft is not None else state.suggestion
     if not (draft.title.strip() or draft.body.strip()):
         raise ValueError("建议稿为空，无法采用。")
+    if state.original_title.strip() and not draft.title.strip():
+        raise ValueError("确认版标题为空，不能丢失原文标题。")
+    if state.original_body.strip() and not draft.body.strip():
+        raise ValueError("确认版正文为空，不能丢失原文正文。")
     # Recheck the exact candidate shown to and accepted by the user.
     findings = tuple(check_text(draft.title, draft.body, list(state.rules)))
     semantic = _review_semantics(semantic_reviewer, draft.title, draft.body)

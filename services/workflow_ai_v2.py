@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import re
 
 from services import llm
 from services.rule_checker import Finding
@@ -9,7 +10,39 @@ from services.workflow_v2 import Draft, SemanticIssue, SemanticReview
 
 
 REVIEW_PROMPT = """你是教育内容运营的发布前语义审核助手。只根据输入内容判断可能的夸大效果、虚构事实、上下文误导或不当引导；不把正常的教育表达判作风险。规则命中由另一模块负责。不要推断未提供的事实，也不要输出思维链。只输出 JSON：{\"issues\":[{\"location\":\"标题或正文\",\"excerpt\":\"原文中的短片段\",\"reason\":\"具体风险理由\",\"severity\":\"high或medium或low\"}]}。无明显问题返回空数组。"""
-DRAFT_PROMPT = """你是教育内容编辑。根据原文、规则命中及语义问题，只对必要的风险表达作最小修改，保持段落与真实卖点，不虚构事实、结果、师资或用户反馈。建议稿供用户审阅，不是自动发布。只输出 JSON：{\"title\":\"建议标题\",\"body\":\"建议正文\",\"reason\":\"具体改动与理由\"}。保留没有风险的原句。"""
+DRAFT_PROMPT = """你是教育内容编辑。根据原文、规则命中及语义问题，只对必要的风险表达作最小修改，保持段落与真实卖点，不虚构事实、结果、师资或用户反馈。区分「见效时间」和「服务周期」：例如原文“30天保证提分”或“一个月后提高50分”只是在承诺见效，不证明提供30天服务；不能改成“30天课程/30天学习支持”，没有明确依据就去掉时长。无法核实的事实请写明需人工确认，不要声称“未虚构事实”。建议稿供用户审阅，不是自动发布。只输出 JSON：{\"title\":\"建议标题\",\"body\":\"建议正文\",\"reason\":\"具体改动与理由\"}。保留没有风险的原句。"""
+
+TIME_SPAN_RE = re.compile(r"(?:\d{1,3}|[一二三四五六七八九十]+)(?:天|周|个月|月)")
+RESULT_TERMS_RE = re.compile(r"保证|提分|提高|提升|见效|成绩|涨分|有效|逆袭")
+SERVICE_TERMS = r"课程|服务|陪练|辅导|训练|学习支持|时长|为期"
+
+
+def _remove_unverified_duration(title: str, body: str, candidate_title: str,
+                                candidate_body: str) -> tuple[str, str, bool]:
+    """Do not turn an outcome deadline into an unverified service duration."""
+    original = title + "\n" + body
+    unsupported: set[str] = set()
+    for match in TIME_SPAN_RE.finditer(original):
+        clause_start = max(original.rfind(char, 0, match.start()) for char in "，。！？；\n") + 1
+        ends = [original.find(char, match.end()) for char in "，。！？；\n"]
+        clause_end = min((end for end in ends if end >= 0), default=len(original))
+        clause = original[clause_start:clause_end]
+        term = match.group()
+        explicit_service = bool(re.search(
+            rf"(?:{re.escape(term)}.{{0,6}}(?:{SERVICE_TERMS})|(?:{SERVICE_TERMS}).{{0,6}}{re.escape(term)})",
+            original,
+        ))
+        if RESULT_TERMS_RE.search(clause) and not explicit_service:
+            unsupported.add(term)
+    removed = any(term in candidate_title or term in candidate_body for term in unsupported)
+    for term in unsupported:
+        candidate_title = candidate_title.replace(term, "")
+        candidate_body = candidate_body.replace(term, "")
+    return candidate_title, candidate_body, removed
+
+
+def _qualify_model_reason(reason: str) -> str:
+    return re.sub(r"(?:未虚构|没有虚构|不虚构)[^，。；;]{0,32}", "相关事实仍需人工核对", reason)
 
 
 def _complete(system: str, payload: dict) -> dict:
@@ -65,7 +98,12 @@ def make_draft(title: str, body: str, findings: tuple[Finding, ...],
         candidate_title, candidate_body = result.get("title"), result.get("body")
         if not isinstance(candidate_title, str) or not isinstance(candidate_body, str):
             raise ValueError("建议稿字段缺失")
-        return Draft(candidate_title, candidate_body, str(result.get("reason", "请人工核对修改。")), "LLM")
+        candidate_title, candidate_body, removed_duration = _remove_unverified_duration(
+            title, body, candidate_title, candidate_body)
+        reason = _qualify_model_reason(str(result.get("reason", "请人工核对修改。")))
+        if removed_duration:
+            reason += " 原文时长只涉及见效承诺，不能据此推断服务周期；建议稿已移除相同时长，如确有服务周期请人工核对。"
+        return Draft(candidate_title, candidate_body, reason, "LLM")
     except Exception as exc:
         if not findings:
             return None
