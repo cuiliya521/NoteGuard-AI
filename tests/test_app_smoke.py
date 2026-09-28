@@ -56,8 +56,8 @@ class AppSmokeTests(unittest.TestCase):
         app.run(timeout=30)
 
         navigation_options = app.radio(key="workspace_page").options
-        self.assertEqual(len(navigation_options), 4)
-        for page in ("内容审核中心", "招生笔记助手", "历史与资产", "审核规则中心"):
+        self.assertEqual(len(navigation_options), 5)
+        for page in ("内容审核中心", "协作审核 V2", "招生笔记助手", "历史与资产", "审核规则中心"):
             self.assertTrue(any(page in option for option in navigation_options))
         app.radio(key="workspace_page").set_value("招生笔记助手")
         app.run(timeout=30)

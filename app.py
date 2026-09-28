@@ -117,6 +117,7 @@ from services.link_importer import (
 )
 from services.ocr_postprocessor import correct_ocr_text
 from services import llm as llm_service
+from services.workflow_ui_v2 import render_workflow_v2
 
 if not hasattr(llm_service, "generate_content_lab_draft"):
     llm_service = importlib.reload(llm_service)
@@ -7405,12 +7406,14 @@ def main() -> None:
 
     navigation_descriptions = {
         "内容审核中心": "审核标题、正文和封面",
+        "协作审核 V2": "人工确认建议稿并复检",
         "招生笔记助手": "拆同行内容，生成招生笔记",
         "历史与资产": "查看审核记录与案例资产",
         "审核规则中心": "维护内容审核标准",
     }
     navigation_icons = {
         "内容审核中心": "🛡️",
+        "协作审核 V2": "🔁",
         "招生笔记助手": "🔥",
         "历史与资产": "📚",
         "审核规则中心": "⚙️",
@@ -7473,6 +7476,9 @@ def main() -> None:
 
     if workspace_page == "招生笔记助手":
         render_content_lab(creator_profile)
+        return
+    if workspace_page == "协作审核 V2":
+        render_workflow_v2(rules)
         return
     render_page_hero(
         "内容审核中心",
