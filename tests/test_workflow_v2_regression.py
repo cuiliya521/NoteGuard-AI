@@ -1,11 +1,12 @@
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 from streamlit.testing.v1 import AppTest
 
 from services.workflow_ai_v2 import make_draft
-from services.workflow_v2 import Draft, SemanticReview, decide_workflow, start_workflow
-from services.rule_checker import Rule
+from services.workflow_v2 import Draft, SemanticIssue, SemanticReview, decide_workflow, start_workflow
+from services.rule_checker import Finding, Rule
 
 
 RULES = [Rule("效果承诺", "保证提分", "确定性承诺", "学习支持", "high")]
@@ -13,6 +14,25 @@ CLEAR = lambda title, body: SemanticReview(available=True)
 
 
 class WorkflowRegressionTests(unittest.TestCase):
+    def test_unverified_business_claims_are_removed_before_display(self):
+        issues = (
+            SemanticIssue("正文", "30天保证提分50分", "无依据的效果承诺", "high"),
+            SemanticIssue("正文", "十万家庭验证有效", "无可核实来源，涉嫌虚构", "high"),
+        )
+        findings = (Finding("保证提分", "标题", "效果承诺", "疑似承诺",
+                            "提供针对性学习支持", "high", 4, 8),)
+        with patch("services.workflow_ai_v2._complete", return_value={
+            "title": "初二数学针对性学习支持",
+            "body": "提供针对性的学习支持；相关用户反馈需人工核实。",
+            "reason": "十万家庭验证有效需核实",
+        }):
+            draft = make_draft("初二数学保证提分", "30天保证提分50分，十万家庭验证有效",
+                               findings, issues)
+        self.assertEqual(draft.title, "初二数学")
+        self.assertEqual(draft.body, "")
+        self.assertTrue(any("十万家庭验证有效" in item for item in draft.confirmation_items))
+        self.assertNotIn("需人工核实", draft.body)
+
     def test_rule_replacements_are_not_sent_as_business_facts(self):
         with patch("services.workflow_ai_v2._complete", return_value={
             "title": "初二数学", "body": "", "reason": "删除承诺，正文需运营确认事实后补充。",
@@ -69,7 +89,7 @@ class WorkflowRegressionTests(unittest.TestCase):
         self.assertIn("30天", draft.body)
 
     def test_navigation_preserves_pending_fields_and_changed_input_invalidates(self):
-        app = AppTest.from_file("app.py").run(timeout=30)
+        app = AppTest.from_file(str(Path(__file__).resolve().parents[1] / "app.py")).run(timeout=30)
         app.radio(key="workspace_page").set_value("协作审核 V2").run(timeout=30)
         app.text_input(key="v2_title").set_value("保证提分").run(timeout=30)
         app.text_area(key="v2_body").set_value("原文正文").run(timeout=30)
