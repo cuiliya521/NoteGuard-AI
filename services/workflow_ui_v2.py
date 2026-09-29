@@ -84,6 +84,10 @@ def render_workflow_v2(rules: list) -> None:
         st.text(state.suggestion.title)
         st.text(state.suggestion.body)
         st.caption(f"来源：{state.suggestion.source}。AI 原始建议理由（事实需人工核对）：{state.suggestion.reason}" if state.suggestion.source == "LLM" else f"来源：{state.suggestion.source}。{state.suggestion.reason}")
+        if state.suggestion.confirmation_items:
+            st.markdown("**人工确认项（不属于建议稿）**")
+            for item in state.suggestion.confirmation_items:
+                st.write(f"- {item}")
         if state.suggestion.error:
             st.warning("模型建议不可用，已降级为规则替代；请特别核对上下文。")
     if state.path == "needs_decision":

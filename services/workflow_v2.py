@@ -29,6 +29,7 @@ class Draft:
     reason: str
     source: str
     error: str = ""
+    confirmation_items: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)

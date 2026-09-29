@@ -56,6 +56,51 @@ def _qualify_model_reason(reason: str) -> str:
     return re.sub(r"(?:未虚构|没有虚构|不虚构)[^，。；;]{0,32}", "相关事实仍需人工核对", reason)
 
 
+def _deletion_only(source: str, candidate: str) -> bool:
+    """A draft may retain source characters in order, but cannot invent wording."""
+    chars = iter(source)
+    return all(any(original == char for original in chars) for char in candidate)
+
+
+def _conservative_field(source: str, location: str, findings: tuple[Finding, ...],
+                        issues: tuple[SemanticIssue, ...]) -> str:
+    """Remove risky source clauses; never use rule replacement text as a fact."""
+    terms = [f.term for f in findings if f.position == location and f.term]
+    excerpts = [i.excerpt for i in issues if i.location == location and i.excerpt]
+    if location == "正文":
+        chunks = re.split(r"([，。！？；;\n])", source)
+        kept = []
+        for index in range(0, len(chunks), 2):
+            clause = chunks[index]
+            separator = chunks[index + 1] if index + 1 < len(chunks) else ""
+            if clause.strip() and (any(term in clause for term in terms)
+                                   or any(excerpt in clause or clause in excerpt for excerpt in excerpts)
+                                   or (RESULT_TERMS_RE.search(clause) and
+                                       (TIME_SPAN_RE.search(clause) or re.search(r"\d+\s*分", clause)))):
+                continue
+            kept.append(clause + separator)
+        return "".join(kept).strip(" ，。！？；;\n")
+    result = source
+    for term in sorted(terms, key=len, reverse=True):
+        result = result.replace(term, "")
+    result = re.sub(r"(?:保证|承诺)?(?:提分|涨分|提高|提升|见效)\s*\d*\s*分?", "", result)
+    # A deadline or outcome metric adjacent to the removed promise is unsafe.
+    result = re.sub(r"(?:\d+|[一二三四五六七八九十]+)(?:天|周|个月|月)(?=\s*$|[，。！？；;])", "", result)
+    result = re.sub(r"(?:提分|涨分|提高|提升)\s*\d+\s*分?", "", result)
+    for excerpt in excerpts:
+        if excerpt in result:
+            result = result.replace(excerpt, "")
+    return result.strip(" ，。！？；;\n")
+
+
+def _confirmation_items(issues: tuple[SemanticIssue, ...]) -> tuple[str, ...]:
+    return tuple(dict.fromkeys(
+        f"请人工核实原文「{issue.excerpt}」的依据，确认前不要写入建议稿。"
+        for issue in issues
+        if any(word in issue.reason for word in ("核实", "依据", "虚构", "未经证实", "来源"))
+    ))
+
+
 def _complete(system: str, payload: dict) -> dict:
     api_key = llm.get_deepseek_api_key()
     if not api_key:
@@ -114,12 +159,23 @@ def make_draft(title: str, body: str, findings: tuple[Finding, ...],
         reason = _qualify_model_reason(str(result.get("reason", "请人工核对修改。")))
         if removed_duration:
             reason += " 原文时长只涉及见效承诺，不能据此推断服务周期；建议稿已移除相同时长，如确有服务周期请人工核对。"
-        return Draft(candidate_title, candidate_body, reason, "LLM")
+        confirmation_items = _confirmation_items(issues)
+        if (not _deletion_only(title, candidate_title)
+                or not _deletion_only(body, candidate_body)
+                or any(f.term in (candidate_title if f.position == "标题" else candidate_body)
+                       for f in findings)
+                or any(i.excerpt in (candidate_title if i.location == "标题" else candidate_body)
+                       for i in issues)):
+            candidate_title = _conservative_field(title, "标题", findings, issues)
+            candidate_body = _conservative_field(body, "正文", findings, issues)
+            reason = "模型建议包含原文未提供的表达或保留风险命中，已回退为仅删除原文风险片段的保守稿。" + reason
+        return Draft(candidate_title, candidate_body, reason, "LLM",
+                     confirmation_items=confirmation_items)
     except Exception as exc:
-        if not findings:
+        if not findings and not issues:
             return None
-        from services.rewriter import rewrite_with_local_rules
-        fallback = rewrite_with_local_rules(title, body, list(findings))
-        return Draft(fallback.title, fallback.body,
-                     "AI 建议不可用；以下仅根据命中规则生成本地替代，请人工检查语义与事实。",
-                     "本地规则", error=f"{type(exc).__name__}: {exc}")
+        return Draft(_conservative_field(title, "标题", findings, issues),
+                     _conservative_field(body, "正文", findings, issues),
+                     "AI 建议不可用；仅删除已定位风险片段，请人工确认剩余内容和待核实事实。",
+                     "本地规则", error=f"{type(exc).__name__}: {exc}",
+                     confirmation_items=_confirmation_items(issues))
