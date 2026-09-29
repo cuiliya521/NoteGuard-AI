@@ -13,9 +13,13 @@ EXAMPLE_BODY = "初二数学线上1v1陪练，保证每位学员一个月提高5
 
 
 def render_workflow_v2(rules: list) -> None:
-    st.title("发布前协作审核 · V2 试验版")
-    st.caption("规则检查 → 语义分析 → 按风险决定是否生成建议 → 人工确认 → 采用后复检。原文始终保留。")
-    st.info("V2 位于独立开发分支；当前公开 V1 Demo 不受影响。无 API Key 时只进行规则检查，并清楚标记语义能力不可用。")
+    st.markdown("""
+        <div class="v2-heading">
+            <h1>发布前协作审核 · V2</h1>
+            <p class="v2-lead">规则检查 → 语义分析 → 人工确认 → 采用后复检，原文始终保留。</p>
+            <p class="v2-detail">语义分析依赖已配置的 AI 服务；不可用时会明确标注检查范围。</p>
+        </div>
+    """, unsafe_allow_html=True)
     st.write("**1 · 输入原始内容**")
     # Streamlit removes widget keys when another page does not render them.
     # Keep the user's current draft in separate session keys across navigation.
