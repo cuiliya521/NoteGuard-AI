@@ -1683,8 +1683,8 @@ def render_styles() -> None:
         .stButton button[kind="primary"] p,
         .stButton button[kind="primary"] span,
         .stButton button[kind="primary"] div {
-            color: #344054 !important;
-            -webkit-text-fill-color: #344054 !important;
+            color: #ffffff !important;
+            -webkit-text-fill-color: #ffffff !important;
         }
         .st-key-delete_workspace_image button,
         .st-key-delete_workspace_image button *,
