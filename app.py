@@ -740,20 +740,42 @@ def render_styles() -> None:
             line-height: 1.2;
             color: var(--ng-text);
             letter-spacing: 0;
-            font-weight: 720;
+            font-weight: 750;
         }
         .hero p {
-            margin: 8px 0 0;
+            margin: 13px 0 0;
             color: var(--ng-text);
             font-size: 18px;
             font-weight: 650;
         }
         .notice {
-            margin-top: 7px;
-            color: var(--ng-muted);
+            margin-top: 9px;
+            color: #475569;
             font-size: 14px;
+            font-weight: 550;
             line-height: 1.6;
             max-width: 760px;
+        }
+        .v2-heading h1 {
+            margin: 0 0 13px;
+            color: var(--ng-text);
+            font-size: 34px;
+            line-height: 1.25;
+            font-weight: 750;
+        }
+        .v2-heading .v2-lead {
+            margin: 0 0 8px;
+            color: #344054;
+            font-size: 16px;
+            font-weight: 570;
+            line-height: 1.6;
+        }
+        .v2-heading .v2-detail {
+            margin: 0 0 18px;
+            color: #526174;
+            font-size: 13px;
+            font-weight: 550;
+            line-height: 1.55;
         }
         .quick-entry-grid {
             display: grid;
@@ -1346,19 +1368,21 @@ def render_styles() -> None:
             border-radius: 10px !important;
             background: var(--ng-primary) !important;
             border-color: var(--ng-primary) !important;
-            color: #344054 !important;
-            box-shadow: 0 6px 16px rgba(239, 68, 68, 0.20) !important;
+            color: #ffffff !important;
+            box-shadow: 0 6px 16px rgba(37, 99, 235, 0.20) !important;
             font-weight: 650 !important;
         }
         button[kind="primary"] p,
-        button[kind="primary"] span {
-            color: #344054 !important;
+        button[kind="primary"] span,
+        button[kind="primary"] svg {
+            color: #ffffff !important;
+            fill: currentColor;
         }
         button[kind="primary"]:hover {
             background: var(--ng-primary-hover) !important;
             border-color: var(--ng-primary-hover) !important;
             transform: translateY(-1px);
-            box-shadow: 0 8px 20px rgba(239, 68, 68, 0.26) !important;
+            box-shadow: 0 8px 20px rgba(37, 99, 235, 0.26) !important;
         }
         button[kind="secondary"] {
             min-height: 40px;
@@ -1748,6 +1772,9 @@ def render_styles() -> None:
             }
         }
         @media (max-width: 700px) {
+            .v2-heading h1 {
+                font-size: 28px;
+            }
             .comparison-grid {
                 grid-template-columns: 1fr;
             }
