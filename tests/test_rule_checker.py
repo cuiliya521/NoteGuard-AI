@@ -76,3 +76,19 @@ class RuleCheckerTests(unittest.TestCase):
 
             rule_path.write_text(json.dumps({"invalid": True}), encoding="utf-8")
             self.assertEqual(load_rules(rule_path), [])
+
+
+    def test_negated_risk_terms_do_not_trigger(self) -> None:
+        rules = load_rules(RULES_PATH)
+        self.assertEqual(check_text("课程不保证提分", "学习结果存在个体差异", rules), [])
+        self.assertEqual(check_text("我们不承诺包过", "只提供备考支持", rules), [])
+
+    def test_meta_mentions_of_risk_terms_do_not_trigger(self) -> None:
+        rules = load_rules(RULES_PATH)
+        self.assertEqual(check_text("合规培训", "“包过”属于不应使用的宣传词。", rules), [])
+        self.assertEqual(check_text("审核提醒", "“官方指定”字样不得在没有授权文件时使用。", rules), [])
+
+    def test_affirmative_risk_still_triggers(self) -> None:
+        rules = load_rules(RULES_PATH)
+        self.assertTrue(check_text("普通话包过", "报名就能拿证", rules))
+        self.assertTrue(check_text("官方指定课程", "欢迎报名", rules))
