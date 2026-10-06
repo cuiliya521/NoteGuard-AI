@@ -1,0 +1,53 @@
+name: V5 final evaluation
+
+on:
+  push:
+    branches:
+      - v5/rule-semantic-arbitration
+    paths:
+      - "eval/final_v5_80.json"
+      - "scripts/evaluate_v5.py"
+      - "services/rule_checker.py"
+      - "services/workflow_v2.py"
+      - "data/rules.json"
+      - ".github/workflows/v5-final-eval.yml"
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "Evaluation mode"
+        required: true
+        default: "rule-only"
+        type: choice
+        options:
+          - rule-only
+          - full
+
+jobs:
+  evaluate:
+    runs-on: ubuntu-latest
+    env:
+      DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Choose mode
+        id: mode
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "value=${{ inputs.mode }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "value=rule-only" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Evaluate frozen 80-case set
+        run: python scripts/evaluate_v5.py --mode "${{ steps.mode.outputs.value }}" --output "eval/results/v5_final80_${{ steps.mode.outputs.value }}.json"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: v5-final-eval-${{ steps.mode.outputs.value }}
+          path: eval/results/*.json
+          if-no-files-found: ignore
