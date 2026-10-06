@@ -29,6 +29,28 @@ RESULT_PROMISE_PATTERNS = [
 ]
 
 
+NEGATION_PREFIXES = (
+    "不", "不会", "不能", "不得", "禁止", "避免", "请勿", "并非", "不是",
+    "不承诺", "不保证", "不使用", "不宣传",
+)
+META_FOLLOW_PATTERNS = (
+    re.compile(r"^[”\"’']?(?:不是|不等于|不代表|仅是|只是)"),
+    re.compile(r"^[”\"’']?.{0,8}(?:属于|是).{0,12}(?:风险词|禁用词|不应使用|禁止使用|宣传词)"),
+)
+
+
+def should_suppress_risk_match(text: str, start: int, end: int, term: str) -> bool:
+    """Skip explicit negation/meta mentions while keeping affirmative risk claims."""
+    before = text[max(0, start - 14):start].rstrip(" \t（(【[“\"'‘")
+    after = text[end:min(len(text), end + 36)].lstrip()
+
+    if any(before.endswith(prefix) for prefix in NEGATION_PREFIXES):
+        return True
+    if any(pattern.search(after) for pattern in META_FOLLOW_PATTERNS):
+        return True
+    return False
+
+
 @dataclass(frozen=True)
 class Rule:
     category: str
@@ -256,6 +278,8 @@ def build_pattern_findings(
             start, end = match.span()
             if any(start < occupied_end and end > occupied_start for occupied_start, occupied_end in occupied_ranges):
                 continue
+            if should_suppress_risk_match(text, start, end, match.group()):
+                continue
             pattern_findings.append(
                 Finding(
                     term=match.group(),
@@ -300,6 +324,9 @@ def check_text(title: str, body: str, rules: list[Rule]) -> list[Finding]:
                     for occupied_start, occupied_end in occupied_ranges
                 )
                 if has_overlap:
+                    start = end
+                    continue
+                if should_suppress_risk_match(text, index, end, rule.term):
                     start = end
                     continue
 
