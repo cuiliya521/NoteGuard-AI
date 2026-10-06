@@ -52,19 +52,69 @@ SemanticReviewer = Callable[[str, str], SemanticReview]
 DraftMaker = Callable[[str, str, tuple[Finding, ...], tuple[SemanticIssue, ...]], Draft | None]
 
 
+HARD_RULE_TERMS = {
+    "保证提分", "保证有效", "一定有效", "100%有效", "保过", "包过",
+    "押题必中",
+}
+
+
+def is_hard_finding(finding: Finding) -> bool:
+    """Rules that remain blocking even when semantic review does not repeat them."""
+    if finding.term in HARD_RULE_TERMS:
+        return True
+    if finding.category == "效果承诺" and finding.severity == "high" and (
+        any(char.isdigit() for char in finding.term)
+        or "提高" in finding.term
+        or "提升" in finding.term
+        or "涨" in finding.term
+    ):
+        return True
+    return False
+
+
+def _semantic_supports_finding(finding: Finding, semantic: SemanticReview) -> bool:
+    for issue in semantic.issues:
+        if issue.location != finding.position:
+            continue
+        if issue.excerpt == finding.term or finding.term in issue.excerpt or issue.excerpt in finding.term:
+            return True
+    return False
+
+
+def arbitrate_rule_findings(
+    findings: tuple[Finding, ...],
+    semantic: SemanticReview,
+) -> tuple[Finding, ...]:
+    """V5: hard rules always block; contextual rules require semantic support when AI is available.
+
+    If semantic review is unavailable, keep all rule findings as a fail-safe.
+    """
+    if not semantic.available:
+        return findings
+    return tuple(
+        finding
+        for finding in findings
+        if is_hard_finding(finding) or _semantic_supports_finding(finding, semantic)
+    )
+
+
 def start_workflow(
     title: str, body: str, rules: list[Rule],
     semantic_reviewer: SemanticReviewer, draft_maker: DraftMaker,
 ) -> WorkflowState:
     if not (title.strip() or body.strip()):
         raise ValueError("请先输入标题或正文。")
-    findings = tuple(check_text(title, body, rules))
+    raw_findings = tuple(check_text(title, body, rules))
     semantic = _review_semantics(semantic_reviewer, title, body)
+    findings = arbitrate_rule_findings(raw_findings, semantic)
     needs_change = bool(findings or semantic.issues)
     if not needs_change:
-        reason = "规则未命中；语义检查未发现明显问题，保留原文。" if semantic.available else (
-            "规则未命中；语义检查不可用，仅能给出规则范围内的结果，不能视为全面通过。"
-        )
+        if semantic.available and raw_findings:
+            reason = f"原始规则命中 {len(raw_findings)} 项，但均属于需结合上下文的提示，语义审核未支持其为风险；保留原文。"
+        elif semantic.available:
+            reason = "规则未命中；语义检查未发现明显问题，保留原文。"
+        else:
+            reason = "规则未命中；语义检查不可用，仅能给出规则范围内的结果，不能视为全面通过。"
         return WorkflowState(title, body, tuple(rules), findings, semantic, "clear", reason,
                              final_title=title, final_body=body, final_findings=findings,
                              final_semantic=semantic)
@@ -101,8 +151,9 @@ def decide_workflow(
     if state.original_body.strip() and not draft.body.strip():
         raise ValueError("确认版正文为空，不能丢失原文正文。")
     # Recheck the exact candidate shown to and accepted by the user.
-    findings = tuple(check_text(draft.title, draft.body, list(state.rules)))
+    raw_findings = tuple(check_text(draft.title, draft.body, list(state.rules)))
     semantic = _review_semantics(semantic_reviewer, draft.title, draft.body)
+    findings = arbitrate_rule_findings(raw_findings, semantic)
     if findings or semantic.issues:
         reason = f"已采用并复检，仍有 {len(findings)} 项规则命中、{len(semantic.issues)} 项语义问题；尚未完全通过。"
     elif not semantic.available:
