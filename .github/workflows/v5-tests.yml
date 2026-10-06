@@ -1,0 +1,19 @@
+name: V5 arbitration tests
+
+on:
+  push:
+    branches:
+      - v5/rule-semantic-arbitration
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - run: python -m unittest tests.test_rule_checker tests.test_workflow_v2 tests.test_workflow_v2_regression
