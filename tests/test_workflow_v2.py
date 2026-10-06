@@ -34,13 +34,13 @@ class WorkflowV2Tests(unittest.TestCase):
         self.assertEqual(state.path, "clear")
         self.assertEqual(state.final_title, state.original_title)
 
-    def test_low_rule_hit_but_semantics_normal_remains_explainable(self):
+    def test_contextual_rule_can_be_cleared_by_semantics(self):
         state = start_workflow("1v1 数学陪练", "交流学习方法", RULES, CLEAR,
                                lambda *args: Draft("数学陪练", "交流学习方法", "规则替代", "test"))
-        self.assertEqual(state.path, "needs_decision")
-        self.assertEqual(len(state.original_findings), 1)
+        self.assertEqual(state.path, "clear")
+        self.assertEqual(state.original_findings, ())
         self.assertFalse(state.semantic.issues)
-        self.assertEqual(state.original_findings[0].severity, "low")
+        self.assertIn("需结合上下文", state.decision_reason)
 
     def test_reject_preserves_original_and_risk(self):
         state = start_workflow("保证提分", "原文", RULES, CLEAR,
@@ -92,6 +92,23 @@ class WorkflowV2Tests(unittest.TestCase):
         final = decide_workflow(state, "reject", CLEAR)
         with self.assertRaises(ValueError):
             decide_workflow(final, "accept", CLEAR)
+
+
+    def test_contextual_rule_is_kept_when_semantics_supports_it(self):
+        reviewer = lambda title, body: SemanticReview((
+            SemanticIssue("标题", "1v1", "与结果承诺组合，需人工确认", "medium"),
+        ), available=True)
+        state = start_workflow("1v1 数学陪练", "交流学习方法", RULES, reviewer,
+                               lambda *args: Draft("数学陪练", "交流学习方法", "移除风险", "test"))
+        self.assertEqual(state.path, "needs_decision")
+        self.assertEqual(len(state.original_findings), 1)
+
+    def test_contextual_rule_fails_safe_when_semantics_unavailable(self):
+        unavailable = lambda title, body: SemanticReview(error="API unavailable")
+        state = start_workflow("1v1 数学陪练", "交流学习方法", RULES, unavailable,
+                               lambda *args: Draft("数学陪练", "交流学习方法", "规则替代", "test"))
+        self.assertEqual(state.path, "needs_decision")
+        self.assertEqual(len(state.original_findings), 1)
 
 
 if __name__ == "__main__":
