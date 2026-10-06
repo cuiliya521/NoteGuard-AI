@@ -1,0 +1,732 @@
+{
+  "name": "NoteGuard V5 Final Test v1",
+  "version": "2026-10-06",
+  "policy": "Created after V5 rule-semantic arbitration logic was frozen. Do not tune V5 rules/prompts against individual errors from this set; any code/prompt change requires a new final set.",
+  "counts": {
+    "total": 80,
+    "risk": 40,
+    "safe": 40
+  },
+  "cases": [
+    {
+      "id": "FV5-R01",
+      "group": "risk",
+      "scenario": "短期量化提分",
+      "title": "21天冲刺计划",
+      "body": "21天把数学从62分提到82分，适合基础薄弱学生。",
+      "gold_label": "risk",
+      "gold_type": "短期量化效果承诺"
+    },
+    {
+      "id": "FV5-R02",
+      "group": "risk",
+      "scenario": "结果保证",
+      "title": "成绩稳步上升",
+      "body": "按我们的节奏学，期末成绩肯定能提高一个档次。",
+      "gold_label": "risk",
+      "gold_type": "确定性效果承诺"
+    },
+    {
+      "id": "FV5-R03",
+      "group": "risk",
+      "scenario": "群体泛化",
+      "title": "家长反馈",
+      "body": "每个参加训练的孩子最后都变得更专注了。",
+      "gold_label": "risk",
+      "gold_type": "群体效果泛化"
+    },
+    {
+      "id": "FV5-R04",
+      "group": "risk",
+      "scenario": "升学承诺",
+      "title": "小升初冲刺",
+      "body": "坚持三个月，重点班基本稳进。",
+      "gold_label": "risk",
+      "gold_type": "升学结果承诺"
+    },
+    {
+      "id": "FV5-R05",
+      "group": "risk",
+      "scenario": "考试承诺",
+      "title": "普通话冲刺",
+      "body": "跟完课程二甲肯定拿下，不过退费。",
+      "gold_label": "risk",
+      "gold_type": "考试结果承诺"
+    },
+    {
+      "id": "FV5-R06",
+      "group": "risk",
+      "scenario": "效果数据",
+      "title": "两周见变化",
+      "body": "92%的孩子两周内阅读速度都有明显提升。",
+      "gold_label": "risk",
+      "gold_type": "效果数据需核验"
+    },
+    {
+      "id": "FV5-R07",
+      "group": "risk",
+      "scenario": "比较宣传",
+      "title": "效率更高",
+      "body": "同样一小时，我们的方法学习效率是普通辅导的4倍。",
+      "gold_label": "risk",
+      "gold_type": "量化比较夸张"
+    },
+    {
+      "id": "FV5-R08",
+      "group": "risk",
+      "scenario": "私域引流",
+      "title": "领取资料",
+      "body": "需要完整模板的家长加V：abc123，我单独发。",
+      "gold_label": "risk",
+      "gold_type": "站外私域引流"
+    },
+    {
+      "id": "FV5-R09",
+      "group": "risk",
+      "scenario": "私域引流",
+      "title": "福利资料包",
+      "body": "截图扫码加入家长群，免费资料在群里领取。",
+      "gold_label": "risk",
+      "gold_type": "站外私域引流"
+    },
+    {
+      "id": "FV5-R10",
+      "group": "risk",
+      "scenario": "稀缺营销",
+      "title": "今晚截止",
+      "body": "只剩最后两个名额，错过今晚就没有了。",
+      "gold_label": "risk",
+      "gold_type": "稀缺真实性"
+    },
+    {
+      "id": "FV5-R11",
+      "group": "risk",
+      "scenario": "价格绝对化",
+      "title": "双十一活动",
+      "body": "这是今年最低价，以后绝对不会再便宜。",
+      "gold_label": "risk",
+      "gold_type": "价格绝对化"
+    },
+    {
+      "id": "FV5-R12",
+      "group": "risk",
+      "scenario": "未成年人隐私",
+      "title": "优秀学员展示",
+      "body": "陈同学，XX小学五年级，手机号18612345678，本次考了96分。",
+      "gold_label": "risk",
+      "gold_type": "未成年人隐私"
+    },
+    {
+      "id": "FV5-R13",
+      "group": "risk",
+      "scenario": "证件信息",
+      "title": "录取喜报",
+      "body": "恭喜学员录取，图片里保留了完整准考证号和身份证后六位。",
+      "gold_label": "risk",
+      "gold_type": "敏感个人信息"
+    },
+    {
+      "id": "FV5-R14",
+      "group": "risk",
+      "scenario": "医疗暗示",
+      "title": "专注力提升营",
+      "body": "课程能改善ADHD症状，让孩子坐得住。",
+      "gold_label": "risk",
+      "gold_type": "医疗健康功效暗示"
+    },
+    {
+      "id": "FV5-R15",
+      "group": "risk",
+      "scenario": "医疗暗示",
+      "title": "情绪训练",
+      "body": "这套训练对儿童焦虑症很有效，不用再担心情绪问题。",
+      "gold_label": "risk",
+      "gold_type": "医疗健康功效暗示"
+    },
+    {
+      "id": "FV5-R16",
+      "group": "risk",
+      "scenario": "教师资质",
+      "title": "清北名师课",
+      "body": "全部课程都由清北名师亲自带，师资全国顶尖。",
+      "gold_label": "risk",
+      "gold_type": "资质/最高级背书"
+    },
+    {
+      "id": "FV5-R17",
+      "group": "risk",
+      "scenario": "官方背书",
+      "title": "官方合作",
+      "body": "我们是区教育局官方推荐的幼小衔接机构。",
+      "gold_label": "risk",
+      "gold_type": "官方背书需核验"
+    },
+    {
+      "id": "FV5-R18",
+      "group": "risk",
+      "scenario": "排他背书",
+      "title": "唯一指定",
+      "body": "本区唯一指定的升学规划机构，名额有限。",
+      "gold_label": "risk",
+      "gold_type": "排他/官方背书"
+    },
+    {
+      "id": "FV5-R19",
+      "group": "risk",
+      "scenario": "测评夸大",
+      "title": "10分钟测天赋",
+      "body": "一次测评就能测准孩子未来最适合的职业方向。",
+      "gold_label": "risk",
+      "gold_type": "测评能力夸大"
+    },
+    {
+      "id": "FV5-R20",
+      "group": "risk",
+      "scenario": "焦虑营销",
+      "title": "三年级关键期",
+      "body": "现在还不补基础，四年级以后肯定跟不上。",
+      "gold_label": "risk",
+      "gold_type": "焦虑营销"
+    },
+    {
+      "id": "FV5-R21",
+      "group": "risk",
+      "scenario": "社会证明",
+      "title": "百万家庭验证",
+      "body": "方法已经被100万家庭验证有效，照着做就行。",
+      "gold_label": "risk",
+      "gold_type": "社会证明/效果承诺"
+    },
+    {
+      "id": "FV5-R22",
+      "group": "risk",
+      "scenario": "案例泛化",
+      "title": "真实案例",
+      "body": "这个孩子从班级倒数进了前十，你家孩子照着学也能做到。",
+      "gold_label": "risk",
+      "gold_type": "个案结果泛化"
+    },
+    {
+      "id": "FV5-R23",
+      "group": "risk",
+      "scenario": "押题宣传",
+      "title": "期末冲刺",
+      "body": "老师连续两年押中原题，今年命中率只会更高。",
+      "gold_label": "risk",
+      "gold_type": "考试押题/命中承诺"
+    },
+    {
+      "id": "FV5-R24",
+      "group": "risk",
+      "scenario": "绝对化",
+      "title": "最强阅读课",
+      "body": "这是全市最好的阅读课程，效果没有之一。",
+      "gold_label": "risk",
+      "gold_type": "最高级/绝对化宣传"
+    },
+    {
+      "id": "FV5-R25",
+      "group": "risk",
+      "scenario": "诱导营销",
+      "title": "闭眼选",
+      "body": "这个班闭眼冲就行，报名绝对不后悔。",
+      "gold_label": "risk",
+      "gold_type": "诱导性绝对表达"
+    },
+    {
+      "id": "FV5-R26",
+      "group": "risk",
+      "scenario": "未经证实数据",
+      "title": "提分统计",
+      "body": "上期学员平均提分28.7分，最高提升63分。",
+      "gold_label": "risk",
+      "gold_type": "效果数据真实性"
+    },
+    {
+      "id": "FV5-R27",
+      "group": "risk",
+      "scenario": "短期效果",
+      "title": "一节课见效",
+      "body": "试听一节就能明显提升孩子的阅读理解能力。",
+      "gold_label": "risk",
+      "gold_type": "短期效果承诺"
+    },
+    {
+      "id": "FV5-R28",
+      "group": "risk",
+      "scenario": "学习误导",
+      "title": "不用背单词",
+      "body": "完全不用背单词也能轻松提分，方法比努力更重要。",
+      "gold_label": "risk",
+      "gold_type": "误导/效果承诺"
+    },
+    {
+      "id": "FV5-R29",
+      "group": "risk",
+      "scenario": "多风险组合",
+      "title": "名师保过班",
+      "body": "985名师亲授，普通话考试包过，最后3个名额。",
+      "gold_label": "risk",
+      "gold_type": "资质+考试承诺+稀缺"
+    },
+    {
+      "id": "FV5-R30",
+      "group": "risk",
+      "scenario": "多风险组合",
+      "title": "30天逆袭",
+      "body": "30天保证提分40分，已有5万家庭验证有效。",
+      "gold_label": "risk",
+      "gold_type": "短期量化+社会证明"
+    },
+    {
+      "id": "FV5-R31",
+      "group": "risk",
+      "scenario": "隐晦结果暗示",
+      "title": "家长最关心的结果",
+      "body": "上完这一期，你会发现孩子的排名自然就上去了。",
+      "gold_label": "risk",
+      "gold_type": "隐晦结果承诺"
+    },
+    {
+      "id": "FV5-R32",
+      "group": "risk",
+      "scenario": "隐晦焦虑",
+      "title": "别错过窗口期",
+      "body": "低年级不把阅读习惯抓起来，后面只会越来越吃力。",
+      "gold_label": "risk",
+      "gold_type": "焦虑营销"
+    },
+    {
+      "id": "FV5-R33",
+      "group": "risk",
+      "scenario": "虚假稀缺",
+      "title": "马上满班",
+      "body": "系统显示仅剩1个席位，现在不锁定就会被别人抢走。",
+      "gold_label": "risk",
+      "gold_type": "稀缺真实性"
+    },
+    {
+      "id": "FV5-R34",
+      "group": "risk",
+      "scenario": "未经核验身份",
+      "title": "重点校教研组长",
+      "body": "授课老师全部来自重点学校教研组，教学经验至少10年。",
+      "gold_label": "risk",
+      "gold_type": "资质/经历需核验"
+    },
+    {
+      "id": "FV5-R35",
+      "group": "risk",
+      "scenario": "医疗/教育混淆",
+      "title": "纠正注意力问题",
+      "body": "孩子坐不住不是问题，训练一个月就能纠正多动表现。",
+      "gold_label": "risk",
+      "gold_type": "医疗健康暗示"
+    },
+    {
+      "id": "FV5-R36",
+      "group": "risk",
+      "scenario": "官方暗示",
+      "title": "教育系统资源",
+      "body": "课程采用教育系统内部资源，普通机构拿不到。",
+      "gold_label": "risk",
+      "gold_type": "官方/内部资源暗示"
+    },
+    {
+      "id": "FV5-R37",
+      "group": "risk",
+      "scenario": "未成年人隐私",
+      "title": "学员成长记录",
+      "body": "王同学就读于实验小学三年级，家长电话尾号6628，最近成绩明显上升。",
+      "gold_label": "risk",
+      "gold_type": "可识别未成年人信息"
+    },
+    {
+      "id": "FV5-R38",
+      "group": "risk",
+      "scenario": "测评确定性",
+      "title": "孩子适合什么专业",
+      "body": "做完测评就能准确告诉你孩子将来最适合学文还是学理。",
+      "gold_label": "risk",
+      "gold_type": "测评能力夸大"
+    },
+    {
+      "id": "FV5-R39",
+      "group": "risk",
+      "scenario": "退款诱导",
+      "title": "零风险报名",
+      "body": "没效果全额退，所以报名没有任何风险。",
+      "gold_label": "risk",
+      "gold_type": "效果/零风险承诺"
+    },
+    {
+      "id": "FV5-R40",
+      "group": "risk",
+      "scenario": "强结论背书",
+      "title": "家长一致选择",
+      "body": "所有家长最终都选择续费，这就是效果最好的证明。",
+      "gold_label": "risk",
+      "gold_type": "群体泛化+最高级"
+    },
+    {
+      "id": "FV5-S01",
+      "group": "safe",
+      "scenario": "否定效果承诺",
+      "title": "课程说明",
+      "body": "我们不保证提分，学习结果会因基础和投入不同而存在差异。",
+      "gold_label": "safe",
+      "gold_type": "边界声明"
+    },
+    {
+      "id": "FV5-S02",
+      "group": "safe",
+      "scenario": "否定考试承诺",
+      "title": "考试培训说明",
+      "body": "课程不承诺包过，只提供普通话考试内容讲解和练习反馈。",
+      "gold_label": "safe",
+      "gold_type": "边界声明"
+    },
+    {
+      "id": "FV5-S03",
+      "group": "safe",
+      "scenario": "引用风险词",
+      "title": "运营培训",
+      "body": "“保证提分”属于需要重点审核的宣传表达。",
+      "gold_label": "safe",
+      "gold_type": "合规培训"
+    },
+    {
+      "id": "FV5-S04",
+      "group": "safe",
+      "scenario": "引用风险词",
+      "title": "文案规范",
+      "body": "页面不要出现“全市最好”“唯一指定”这类绝对化字样。",
+      "gold_label": "safe",
+      "gold_type": "合规提醒"
+    },
+    {
+      "id": "FV5-S05",
+      "group": "safe",
+      "scenario": "隐私提醒",
+      "title": "发布前检查",
+      "body": "学员手机号、学校和准考证号必须打码后再发布。",
+      "gold_label": "safe",
+      "gold_type": "隐私保护提醒"
+    },
+    {
+      "id": "FV5-S06",
+      "group": "safe",
+      "scenario": "反私域引流",
+      "title": "评论区规范",
+      "body": "请勿在评论区引导用户添加微信或扫码进群。",
+      "gold_label": "safe",
+      "gold_type": "合规提醒"
+    },
+    {
+      "id": "FV5-S07",
+      "group": "safe",
+      "scenario": "医疗边界",
+      "title": "专注力课程说明",
+      "body": "普通课程不能治疗ADHD，也不能替代专业医疗评估。",
+      "gold_label": "safe",
+      "gold_type": "医疗边界"
+    },
+    {
+      "id": "FV5-S08",
+      "group": "safe",
+      "scenario": "医疗科普",
+      "title": "家长提醒",
+      "body": "如果持续出现焦虑症状，建议寻求专业医疗帮助，不把课程当治疗。",
+      "gold_label": "safe",
+      "gold_type": "医疗边界"
+    },
+    {
+      "id": "FV5-S09",
+      "group": "safe",
+      "scenario": "测评边界",
+      "title": "兴趣测评",
+      "body": "测评只用于兴趣探索，不能精准预测未来职业。",
+      "gold_label": "safe",
+      "gold_type": "测评边界"
+    },
+    {
+      "id": "FV5-S10",
+      "group": "safe",
+      "scenario": "押题边界",
+      "title": "复习范围说明",
+      "body": "我们依据公开考纲整理题型，不承诺押题或原题命中率。",
+      "gold_label": "safe",
+      "gold_type": "考试边界"
+    },
+    {
+      "id": "FV5-S11",
+      "group": "safe",
+      "scenario": "价格合规",
+      "title": "活动价格",
+      "body": "当前优惠截至10月31日，最终价格以报名页实时展示为准。",
+      "gold_label": "safe",
+      "gold_type": "可验证促销信息"
+    },
+    {
+      "id": "FV5-S12",
+      "group": "safe",
+      "scenario": "库存合规",
+      "title": "开放日预约",
+      "body": "今天还有3个参观预约席位，以预约系统实时数据为准。",
+      "gold_label": "safe",
+      "gold_type": "可验证库存"
+    },
+    {
+      "id": "FV5-S13",
+      "group": "safe",
+      "scenario": "资质已核验",
+      "title": "教师介绍",
+      "body": "李老师毕业于985高校，学历证明已核验并获得本人授权展示。",
+      "gold_label": "safe",
+      "gold_type": "已核验事实"
+    },
+    {
+      "id": "FV5-S14",
+      "group": "safe",
+      "scenario": "履历已核验",
+      "title": "教师团队",
+      "body": "王老师曾任重点学校教研组成员，任职材料已完成核验。",
+      "gold_label": "safe",
+      "gold_type": "已核验事实"
+    },
+    {
+      "id": "FV5-S15",
+      "group": "safe",
+      "scenario": "官方关系边界",
+      "title": "政策解读",
+      "body": "课程会介绍教育局公开政策，但不代表与教育局存在官方合作关系。",
+      "gold_label": "safe",
+      "gold_type": "关系边界"
+    },
+    {
+      "id": "FV5-S16",
+      "group": "safe",
+      "scenario": "案例个体差异",
+      "title": "家长反馈",
+      "body": "一位家长反馈孩子更愿意阅读，该反馈仅代表个体体验。",
+      "gold_label": "safe",
+      "gold_type": "个体反馈"
+    },
+    {
+      "id": "FV5-S17",
+      "group": "safe",
+      "scenario": "数据非效果",
+      "title": "资料开放",
+      "body": "100%的电子课件将在课后向已报名用户开放。",
+      "gold_label": "safe",
+      "gold_type": "非效果比例"
+    },
+    {
+      "id": "FV5-S18",
+      "group": "safe",
+      "scenario": "全称非效果",
+      "title": "课程资料",
+      "body": "所有报名用户都可以下载本周练习材料。",
+      "gold_label": "safe",
+      "gold_type": "非效果泛化"
+    },
+    {
+      "id": "FV5-S19",
+      "group": "safe",
+      "scenario": "短期非效果",
+      "title": "七天体验营",
+      "body": "活动持续七天，每天安排20分钟亲子阅读，不承诺效果。",
+      "gold_label": "safe",
+      "gold_type": "事实性服务说明"
+    },
+    {
+      "id": "FV5-S20",
+      "group": "safe",
+      "scenario": "试听非效果",
+      "title": "试听课",
+      "body": "试听一节课主要用于了解课堂节奏和师生互动方式。",
+      "gold_label": "safe",
+      "gold_type": "事实性说明"
+    },
+    {
+      "id": "FV5-S21",
+      "group": "safe",
+      "scenario": "结果边界",
+      "title": "学习观察",
+      "body": "两周内没有明显变化也很正常，学习结果存在个体差异。",
+      "gold_label": "safe",
+      "gold_type": "边界声明"
+    },
+    {
+      "id": "FV5-S22",
+      "group": "safe",
+      "scenario": "反焦虑",
+      "title": "家长沟通",
+      "body": "我们不会用“再不学就晚了”这类话制造家长焦虑。",
+      "gold_label": "safe",
+      "gold_type": "合规说明"
+    },
+    {
+      "id": "FV5-S23",
+      "group": "safe",
+      "scenario": "反标签",
+      "title": "用户分层",
+      "body": "团队不使用“差生”标签，统一描述为“基础薄弱的学习者”。",
+      "gold_label": "safe",
+      "gold_type": "反标签说明"
+    },
+    {
+      "id": "FV5-S24",
+      "group": "safe",
+      "scenario": "引用用户原话",
+      "title": "评论复盘",
+      "body": "有用户评论“闭眼冲”，但这只是用户原话，不作为官方宣传。",
+      "gold_label": "safe",
+      "gold_type": "引用说明"
+    },
+    {
+      "id": "FV5-S25",
+      "group": "safe",
+      "scenario": "历史事实边界",
+      "title": "比赛经历",
+      "body": "学员曾获得市级比赛冠军，奖项证明和展示授权均已核验。",
+      "gold_label": "safe",
+      "gold_type": "已核验事实"
+    },
+    {
+      "id": "FV5-S26",
+      "group": "safe",
+      "scenario": "名称中的国家级",
+      "title": "证书说明",
+      "body": "“国家级普通话测试”是材料中的正式名称，页面附有来源说明。",
+      "gold_label": "safe",
+      "gold_type": "名称/事实说明"
+    },
+    {
+      "id": "FV5-S27",
+      "group": "safe",
+      "scenario": "反速成",
+      "title": "学习理念",
+      "body": "我们不主张速成，更重视长期练习和持续反馈。",
+      "gold_label": "safe",
+      "gold_type": "边界声明"
+    },
+    {
+      "id": "FV5-S28",
+      "group": "safe",
+      "scenario": "否定最低价",
+      "title": "促销规范",
+      "body": "页面不使用“最低价”宣传，只展示当前实际价格和活动期限。",
+      "gold_label": "safe",
+      "gold_type": "合规说明"
+    },
+    {
+      "id": "FV5-S29",
+      "group": "safe",
+      "scenario": "否定官方背书",
+      "title": "合作说明",
+      "body": "本课程不是官方指定项目，也不存在教育局推荐关系。",
+      "gold_label": "safe",
+      "gold_type": "关系边界"
+    },
+    {
+      "id": "FV5-S30",
+      "group": "safe",
+      "scenario": "否定绝对有效",
+      "title": "效果说明",
+      "body": "课程不承诺100%有效，是否适合需要结合孩子实际情况。",
+      "gold_label": "safe",
+      "gold_type": "边界声明"
+    },
+    {
+      "id": "FV5-S31",
+      "group": "safe",
+      "scenario": "数字成绩非承诺",
+      "title": "课堂示例",
+      "body": "老师用“从60分到80分”作为数学计算例子，不代表真实学员结果。",
+      "gold_label": "safe",
+      "gold_type": "示例说明"
+    },
+    {
+      "id": "FV5-S32",
+      "group": "safe",
+      "scenario": "押题词科普",
+      "title": "家长问答",
+      "body": "很多家长会问是否押题，我们明确回复：不提供押题承诺。",
+      "gold_label": "safe",
+      "gold_type": "边界说明"
+    },
+    {
+      "id": "FV5-S33",
+      "group": "safe",
+      "scenario": "名师词边界",
+      "title": "宣传审核",
+      "body": "如果要使用“名师”一词，必须先完成教师资质核验。",
+      "gold_label": "safe",
+      "gold_type": "审核提醒"
+    },
+    {
+      "id": "FV5-S34",
+      "group": "safe",
+      "scenario": "微信词安全",
+      "title": "隐私提示",
+      "body": "请不要公开老师微信二维码，统一使用平台内咨询入口。",
+      "gold_label": "safe",
+      "gold_type": "安全提醒"
+    },
+    {
+      "id": "FV5-S35",
+      "group": "safe",
+      "scenario": "最高级词审核",
+      "title": "审核规则",
+      "body": "发现“最好”“第一”等最高级表达时，需要人工复核来源。",
+      "gold_label": "safe",
+      "gold_type": "审核提醒"
+    },
+    {
+      "id": "FV5-S36",
+      "group": "safe",
+      "scenario": "案例边界",
+      "title": "成绩案例说明",
+      "body": "这是一名学生的历史成绩记录，不代表其他学员会取得相同结果。",
+      "gold_label": "safe",
+      "gold_type": "案例边界"
+    },
+    {
+      "id": "FV5-S37",
+      "group": "safe",
+      "scenario": "退款事实",
+      "title": "退费规则",
+      "body": "如需退费，请按合同中的已购服务退费条款办理，不与学习效果挂钩。",
+      "gold_label": "safe",
+      "gold_type": "合同事实说明"
+    },
+    {
+      "id": "FV5-S38",
+      "group": "safe",
+      "scenario": "低风险普通建议",
+      "title": "阅读习惯",
+      "body": "每天固定20分钟阅读，有助于形成更稳定的学习节奏。",
+      "gold_label": "safe",
+      "gold_type": "一般性教育建议"
+    },
+    {
+      "id": "FV5-S39",
+      "group": "safe",
+      "scenario": "课程内容",
+      "title": "写作课安排",
+      "body": "本周练习人物描写，重点观察动作、语言和细节。",
+      "gold_label": "safe",
+      "gold_type": "事实性课程介绍"
+    },
+    {
+      "id": "FV5-S40",
+      "group": "safe",
+      "scenario": "适用边界",
+      "title": "课程不适合谁",
+      "body": "如果孩子当前更需要一对一针对性辅导，这个小班课程可能不适合。",
+      "gold_label": "safe",
+      "gold_type": "适用范围说明"
+    }
+  ]
+}
