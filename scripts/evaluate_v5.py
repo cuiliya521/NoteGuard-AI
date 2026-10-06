@@ -13,13 +13,17 @@ import argparse
 import json
 from collections import Counter, defaultdict
 from pathlib import Path
+import sys
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
 from services.rule_checker import check_text, load_rules
 from services.workflow_ai_v2 import review_semantics
 from services.workflow_v2 import arbitrate_rule_findings
 
 
-ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_DATASET = ROOT / "eval" / "final_v5_80.json"
 RULES_PATH = ROOT / "data" / "rules.json"
 
