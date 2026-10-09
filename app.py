@@ -7456,6 +7456,9 @@ def main() -> None:
         "内容实验室": "招生笔记助手",
         "内容增长助手": "招生笔记助手",
     }
+    forest_target = st.session_state.pop("forest_navigate_to", None)
+    if forest_target in navigation_descriptions:
+        st.session_state["workspace_page"] = forest_target
     current_page = st.session_state.get("workspace_page")
     if current_page in legacy_navigation:
         st.session_state["workspace_page"] = legacy_navigation[current_page]

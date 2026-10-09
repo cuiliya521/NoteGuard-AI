@@ -1,0 +1,23 @@
+✔ tabs preserve independent texts and original risk evidence (121.267178ms)
+✔ direct accept emits whole-document decision once and shows recheck pending (27.013543ms)
+✔ reject is a real component event (24.801041ms)
+✔ edit confirm emits exact title and body (24.295099ms)
+✔ empty edit blocks confirmation without sending request (20.21519ms)
+✔ cancel after changing text keeps valid saved result and sends no mutation (28.888612ms)
+✔ old render cannot overwrite newer accepted state (22.520708ms)
+✔ foreign postMessage cannot inject result (18.893813ms)
+✔ refresh uses server recovery token instead of trusting browser result data (15.182563ms)
+✔ input empty body blocked, populated input sends audit (29.976896ms)
+✔ unavailable semantic result never says passed in final status (23.113798ms)
+✔ user text is escaped, with no executable inserted HTML (18.661031ms)
+✔ Unicode detector offsets use code points and risk buttons are keyboard accessible (16.392566ms)
+✔ transport timeout unlocks retry and never displays approval (19.195244ms)
+✔ legacy modules emit real navigation events (15.729664ms)
+ℹ tests 15
+ℹ suites 0
+ℹ pass 15
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 914.47279

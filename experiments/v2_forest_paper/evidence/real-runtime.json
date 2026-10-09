@@ -1,0 +1,52 @@
+{
+  "mode": "actual_V2_rules_and_actual_missing_key_failure",
+  "online_deepseek": "NOT_TESTED",
+  "steps": [
+    {
+      "action": "audit",
+      "state": "not_adopted",
+      "rule_hits": 2,
+      "semantic_completed": false,
+      "suggestion_source": "本地规则"
+    },
+    {
+      "action": "accept",
+      "state": "failed",
+      "rule_hits": 0,
+      "semantic_completed": false,
+      "suggestion_source": "本地规则"
+    },
+    {
+      "action": "save_final",
+      "state": "pending",
+      "rule_hits": null,
+      "semantic_completed": null,
+      "suggestion_source": "本地规则"
+    },
+    {
+      "action": "recheck",
+      "state": "failed",
+      "rule_hits": 1,
+      "semantic_completed": false,
+      "suggestion_source": "本地规则"
+    },
+    {
+      "action": "save_final",
+      "state": "pending",
+      "rule_hits": null,
+      "semantic_completed": null,
+      "suggestion_source": "本地规则"
+    },
+    {
+      "action": "recheck",
+      "state": "failed",
+      "rule_hits": 0,
+      "semantic_completed": false,
+      "suggestion_source": "本地规则"
+    }
+  ],
+  "browser": "NOT_TESTED: remote loopback connection refused",
+  "local_http_health": "ok in same execution process; service stopped after check",
+  "viewport": "NOT_MEASURED",
+  "screenshots": []
+}

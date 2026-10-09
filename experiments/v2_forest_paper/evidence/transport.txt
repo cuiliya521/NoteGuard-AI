@@ -1,0 +1,5 @@
+Streamlit local process health: ok
+Remote browser: ERR_CONNECTION_REFUSED for http://127.0.0.1:8511
+Real viewport: not measured
+Real product screenshots: not obtained
+No tunnel, public listener, Codespace, deployment or browser policy workaround.

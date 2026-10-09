@@ -1,0 +1,10 @@
+{
+  "base_v2": "4d3e737004db14c64cc6586480e66f1f9f7552d8",
+  "main": "9bebfb2715ff16f9a1b8f2aa654db85a976bab01",
+  "recheck_experiment": "abe4af1adb0da124940b6521e61a5b79a05178f5",
+  "v5": "d8603106ce707c3d641cc99c99335fa0318a3736",
+  "deployment_branch": "UNCONFIRMED",
+  "visual_sha256": "e5cf78f28cd171b4071a213b39a8204505a89ba47445fc67f92ed221aad35bd4",
+  "visual_css_exactly_extracted": true,
+  "formal_deployment_observation": "public V2 is sleeping; branch not exposed by public page; admin deployment settings unverified"
+}
