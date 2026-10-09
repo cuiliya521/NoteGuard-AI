@@ -55,6 +55,8 @@ function highlight(text, field) {
 function selectRisk(index) {selected=index;render();document.querySelector('.mark.active')?.scrollIntoView({block:"nearest"});}
 function renderPaper() {
   const doc = view === "draft" ? model.draft : view === "final" ? model.final : model.original;
+  $("document-title").textContent = doc?.title?.trim() || (doc ? "无标题内容" : "待审核内容");
+  $("document-title").title = $("document-title").textContent;
   $("paper").innerHTML = doc ? `<div class="kicker">${icon(view === "original" ? "lock" : "doc")}${view === "draft" ? "完整 AI 建议稿 · 独立候选版本" : view === "final" ? "最终采用稿 · 独立确认版本" : "原始内容 · 只读快照"}</div><div class="field">标题</div><h2>${highlight(doc.title,"title")}</h2><div class="field">正文</div><p>${highlight(doc.body,"body")}</p>${view === "draft" ? `<div class="draft-note">建议来源：${escapeHTML(model.draft.source)}。建议稿尚未复检。</div><p class="independent">${escapeHTML(model.draft.reason)}${model.draft.error?"<br>"+escapeHTML(model.draft.error):""}</p>${model.draft.confirmation_items?.length?`<p class="independent">人工确认项（不属于建议正文）：<br>${model.draft.confirmation_items.map(escapeHTML).join("<br>")}</p>`:""}` : ""}${view === "final" ? diffHTML(model.diff) : ""}` : '<div class="kicker">输入标题与正文，开始真实 V2 审核。</div><p class="service-status">尚未评测。请点击右上角「输入内容」。</p>';
   document.querySelectorAll("[data-view]").forEach(b=>{b.classList.toggle("active",b.dataset.view===view);b.setAttribute("aria-selected",b.dataset.view===view);});
   $("paper").setAttribute("aria-labelledby",view+"-tab");
@@ -125,6 +127,8 @@ window.addEventListener("message", event=>{
   parentOrigin=event.origin;
   const args=event.data.args;if(!args?.model)return;
   transportReady=true;
+  $("environment-label").textContent=args.full_app ? "● V2 真实审核" : "● V2 集成实验";
+  document.querySelectorAll(".rail .nav")[1].removeAttribute("title");
   if(!restored){
     restored=true;let token=null;try{token=localStorage.getItem(storageKey);}catch{}
     if(token && token!==args.resume_token){pending={id:crypto.randomUUID(),action:"restore"};send("streamlit:setComponentValue",{dataType:"json",value:{...pending,token}});return;}

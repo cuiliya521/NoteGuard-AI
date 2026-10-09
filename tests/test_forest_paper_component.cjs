@@ -5,7 +5,7 @@ const root=path.join(__dirname,'..','components','forest_paper_v2');
 const source=fs.readFileSync(path.join(root,'component.js'),'utf8');
 const review={rules:[{field:'body',source:'rule',excerpt:'保证',start:1,end:3,positioning:'detector-offset',category:'效果承诺',reason:'真实规则测试引用',severity:'high'}],semantic:[],semantic_available:false,status:'partial_failure',message:'语义未完成',scope_note:'未发现明显风险不等于保证内容绝对合规'};
 function base(){return {version:1,path:'needs_decision',original:{title:'标题',body:'😀保证提分'},draft:{title:'标题',body:'😀陪练',source:'TEST_DOUBLE',reason:'unit',confirmation_items:[]},original_review:review,final:null,final_revision:0,final_status:'not_adopted',final_review:null,error:'',diff:[],draft_diff:[]};}
-function harness(model=base(),savedToken,resumeMessage=''){
+function harness(model=base(),savedToken,resumeMessage='',fullApp=false){
  const dom=new JSDOM(fs.readFileSync(path.join(root,'index.html'),'utf8'),{url:'https://local-test.invalid/component/',runScripts:'outside-only'}),w=dom.window;
  let n=0;w.crypto.randomUUID=()=>`unit-${++n}`;
  w.HTMLDialogElement.prototype.showModal=function(){this.open=true};w.HTMLDialogElement.prototype.close=function(){this.open=false};
@@ -14,7 +14,7 @@ function harness(model=base(),savedToken,resumeMessage=''){
  const sent=[];w.postMessage=(m)=>sent.push(m);
  if(savedToken)w.localStorage.setItem('noteguard.forest-paper.v2.resume',savedToken);
  w.eval(source);
- function receive(next,ack='',token='token',foreign=false){w.dispatchEvent(new w.MessageEvent('message',{source:foreign?{}:w.parent,origin:'https://local-test.invalid',data:{type:'streamlit:render',args:{model:next,ack,resume_token:token,resume_message:resumeMessage}}}));}
+ function receive(next,ack='',token='token',foreign=false){w.dispatchEvent(new w.MessageEvent('message',{source:foreign?{}:w.parent,origin:'https://local-test.invalid',data:{type:'streamlit:render',args:{model:next,ack,resume_token:token,resume_message:resumeMessage,full_app:fullApp}}}));}
  receive(model);
  return {w,sent,receive,doc:w.document,events:()=>sent.filter(x=>x.type==='streamlit:setComponentValue').map(x=>x.value)};
 }
@@ -71,4 +71,18 @@ test('expired resume notice cannot replace valid new audit or recheck status',()
  const next={...base(),version:2,final:{title:'标题',body:'确认稿'},final_status:'completed',final_review:{rules:[],semantic:[],message:'未发现明显风险'}};
  h.receive(next);assert.match(h.doc.getElementById('decision-state').textContent,/未发现明显风险/);
  assert.doesNotMatch(h.doc.getElementById('decision-state').textContent,/已过期/);
+});
+test('document heading follows actual independent document title with safe fallbacks',()=>{
+ const m=base();m.original.title='真实新标题';m.draft.title='建议标题';m.final={title:'采用标题',body:'独立稿'};
+ const h=harness(m);assert.equal(h.doc.getElementById('document-title').textContent,'真实新标题');
+ h.doc.getElementById('draft-tab').click();assert.equal(h.doc.getElementById('document-title').textContent,'建议标题');
+ h.doc.getElementById('final-tab').click();assert.equal(h.doc.getElementById('document-title').textContent,'采用标题');
+ h.receive({...m,version:2,final:{title:' ',body:'独立稿'}});assert.equal(h.doc.getElementById('document-title').textContent,'无标题内容');
+ h.receive({...m,version:3,original:null,draft:null,final:null});assert.equal(h.doc.getElementById('document-title').textContent,'待审核内容');
+});
+test('complete app does not expose integration experiment badge or obsolete navigation tooltip',()=>{
+ const h=harness(base(),undefined,'',true);
+ assert.equal(h.doc.getElementById('environment-label').textContent,'● V2 真实审核');
+ assert.equal(h.doc.querySelectorAll('.rail .nav')[1].getAttribute('title'),null);
+ assert.doesNotMatch(h.doc.body.textContent,/V2 集成实验/);
 });

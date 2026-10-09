@@ -7460,6 +7460,8 @@ def main() -> None:
     if forest_target in navigation_descriptions:
         st.session_state["workspace_page"] = forest_target
     current_page = st.session_state.get("workspace_page")
+    if current_page is None and os.getenv("NOTEGUARD_FOREST_PAPER", "0") == "1":
+        st.session_state["workspace_page"] = "协作审核 V2"
     if current_page in legacy_navigation:
         st.session_state["workspace_page"] = legacy_navigation[current_page]
     with st.sidebar:

@@ -20,6 +20,7 @@ def render_forest_paper_v2(rules):
       [data-testid="stSidebar"]{display:none}
     </style>""", unsafe_allow_html=True)
     event = component(model=work.snapshot(), resume_token=work.token,
+                      full_app=bool(st.session_state.get("forest_full_app")),
                       ack=st.session_state.get("forest_ack", ""),
                       resume_message=st.session_state.get("forest_resume_message", ""),
                       key="forest_paper_component", default=None)
