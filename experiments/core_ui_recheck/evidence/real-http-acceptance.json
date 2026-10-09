@@ -1,0 +1,197 @@
+{
+  "method": "real HTTP + V2 rule engine; DeepSeek semantic/LLM only when configured",
+  "mock": false,
+  "results": [
+    {
+      "case": "original",
+      "result": {
+        "status": "partial_failure",
+        "request_id": "67885faf-941e-45ae-8115-52b11edecafc",
+        "revision": 0,
+        "document": {
+          "title": "30天保证提分50分！初二数学必看",
+          "body": "初二数学线上1v1陪练，保证每位学员一个月提高50分。我们会结合错题复盘学习方法。"
+        },
+        "content_hash": "720992ad2629c949d637e42e1eae334f58a5a24be534a9d00f21fa2407ab3d0d",
+        "rules": {
+          "status": "completed",
+          "count": 2,
+          "items": [
+            {
+              "term": "保证提分",
+              "position": "标题",
+              "category": "效果承诺",
+              "reason": "疑似对学习结果作确定性承诺。",
+              "suggestion": "提供针对性的学习支持",
+              "severity": "high",
+              "start": 3,
+              "end": 7,
+              "source": "rule",
+              "field": "title",
+              "positioning": "detector-offset"
+            },
+            {
+              "term": "保证",
+              "position": "正文",
+              "category": "卖点组合复核",
+              "reason": "可用卖点词“1v1、线上”与效果承诺词“保证”同时出现，建议人工复核，避免形成夸大效果表达。",
+              "suggestion": "",
+              "severity": "medium",
+              "start": 12,
+              "end": 14,
+              "source": "rule",
+              "field": "body",
+              "positioning": "detector-offset"
+            }
+          ]
+        },
+        "semantic": {
+          "status": "failed",
+          "count": null,
+          "items": [],
+          "error": {
+            "code": "missing_key",
+            "message": "服务端尚未配置审核 API 密钥，允许配置后重试。"
+          }
+        },
+        "conclusion": null,
+        "scope_note": "未发现明显风险不等于保证内容绝对合规，发布前仍需人工判断。",
+        "provenance": {
+          "mode": "real_v2",
+          "base_commit": "4d3e737004db14c64cc6586480e66f1f9f7552d8",
+          "rule_module": "services.rule_checker.check_text",
+          "semantic_module": "services.workflow_ai_v2.review_semantics"
+        },
+        "audit_id": "y5JRRGIwbNTxl4U7MCU-W2GwhoZgueTr",
+        "purpose": "original"
+      }
+    },
+    {
+      "case": "manual_fixture_rule_recheck_R1",
+      "input_source": "user_verified_fixture_or_manual_edit_NOT_LLM_output",
+      "result": {
+        "status": "partial_failure",
+        "request_id": "5d4d2791-4c54-4737-a1bf-35dca193b49b",
+        "revision": 1,
+        "document": {
+          "title": "初二数学必看",
+          "body": "初二数学线上1v1陪练。我们会结合错题复盘学习方法。"
+        },
+        "content_hash": "d908119a335e6f090dae1d56fd8de59617d8f28e625822917cde37c1a99f8b07",
+        "rules": {
+          "status": "completed",
+          "count": 0,
+          "items": []
+        },
+        "semantic": {
+          "status": "failed",
+          "count": null,
+          "items": [],
+          "error": {
+            "code": "missing_key",
+            "message": "服务端尚未配置审核 API 密钥，允许配置后重试。"
+          }
+        },
+        "conclusion": null,
+        "scope_note": "未发现明显风险不等于保证内容绝对合规，发布前仍需人工判断。",
+        "provenance": {
+          "mode": "real_v2",
+          "base_commit": "4d3e737004db14c64cc6586480e66f1f9f7552d8",
+          "rule_module": "services.rule_checker.check_text",
+          "semantic_module": "services.workflow_ai_v2.review_semantics"
+        },
+        "purpose": "final"
+      }
+    },
+    {
+      "case": "manual_fixture_rule_recheck_R2",
+      "input_source": "user_verified_fixture_or_manual_edit_NOT_LLM_output",
+      "result": {
+        "status": "partial_failure",
+        "request_id": "73d77e3d-14a1-4716-9a08-f6cb4516f97a",
+        "revision": 2,
+        "document": {
+          "title": "初二数学必看",
+          "body": "初二数学线上1v1陪练。我们会结合错题复盘学习方法。保证一个月提高50分。"
+        },
+        "content_hash": "3757779c2447751aaae911ff45f046bef94febb7066b7720a924d0a9e5077667",
+        "rules": {
+          "status": "completed",
+          "count": 1,
+          "items": [
+            {
+              "term": "保证",
+              "position": "正文",
+              "category": "卖点组合复核",
+              "reason": "可用卖点词“1v1、线上”与效果承诺词“保证”同时出现，建议人工复核，避免形成夸大效果表达。",
+              "suggestion": "",
+              "severity": "medium",
+              "start": 26,
+              "end": 28,
+              "source": "rule",
+              "field": "body",
+              "positioning": "detector-offset"
+            }
+          ]
+        },
+        "semantic": {
+          "status": "failed",
+          "count": null,
+          "items": [],
+          "error": {
+            "code": "missing_key",
+            "message": "服务端尚未配置审核 API 密钥，允许配置后重试。"
+          }
+        },
+        "conclusion": null,
+        "scope_note": "未发现明显风险不等于保证内容绝对合规，发布前仍需人工判断。",
+        "provenance": {
+          "mode": "real_v2",
+          "base_commit": "4d3e737004db14c64cc6586480e66f1f9f7552d8",
+          "rule_module": "services.rule_checker.check_text",
+          "semantic_module": "services.workflow_ai_v2.review_semantics"
+        },
+        "purpose": "final"
+      }
+    },
+    {
+      "case": "manual_fixture_rule_recheck_R3",
+      "input_source": "user_verified_fixture_or_manual_edit_NOT_LLM_output",
+      "result": {
+        "status": "partial_failure",
+        "request_id": "e62dbddd-ee45-408d-9fad-cf8d98c16cab",
+        "revision": 3,
+        "document": {
+          "title": "初二数学必看",
+          "body": "初二数学线上1v1陪练。我们会结合错题复盘学习方法。"
+        },
+        "content_hash": "d908119a335e6f090dae1d56fd8de59617d8f28e625822917cde37c1a99f8b07",
+        "rules": {
+          "status": "completed",
+          "count": 0,
+          "items": []
+        },
+        "semantic": {
+          "status": "failed",
+          "count": null,
+          "items": [],
+          "error": {
+            "code": "missing_key",
+            "message": "服务端尚未配置审核 API 密钥，允许配置后重试。"
+          }
+        },
+        "conclusion": null,
+        "scope_note": "未发现明显风险不等于保证内容绝对合规，发布前仍需人工判断。",
+        "provenance": {
+          "mode": "real_v2",
+          "base_commit": "4d3e737004db14c64cc6586480e66f1f9f7552d8",
+          "rule_module": "services.rule_checker.check_text",
+          "semantic_module": "services.workflow_ai_v2.review_semantics"
+        },
+        "purpose": "final"
+      }
+    }
+  ],
+  "online_status": "BLOCKED",
+  "reason": "No configured/working provider. Real rules completed; semantic/LLM acceptance NOT passed."
+}

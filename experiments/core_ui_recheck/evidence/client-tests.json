@@ -1,0 +1,75 @@
+{
+  "method": "MOCK HTTP + Node VM + DOM interface substitute; NOT online or real browser acceptance",
+  "passed": 17,
+  "total": 17,
+  "results": [
+    {
+      "name": "初始无冻结风险结果或预设建议",
+      "status": "PASS"
+    },
+    {
+      "name": "真实请求尚未返回时显示检测中",
+      "status": "PASS"
+    },
+    {
+      "name": "完整结果按请求标识与稿件版本保存",
+      "status": "PASS"
+    },
+    {
+      "name": "生成建议原文不覆盖",
+      "status": "PASS"
+    },
+    {
+      "name": "拒绝保留原文和原检测",
+      "status": "PASS"
+    },
+    {
+      "name": "直接采用复制完整建议，复检无旧结果",
+      "status": "PASS"
+    },
+    {
+      "name": "复检请求发送实际最终稿，显示复检中",
+      "status": "PASS"
+    },
+    {
+      "name": "开始编辑最终稿即清除旧结论",
+      "status": "PASS"
+    },
+    {
+      "name": "空正文不提交，保留最终稿",
+      "status": "PASS"
+    },
+    {
+      "name": "重复修改产生独立 R2",
+      "status": "PASS"
+    },
+    {
+      "name": "新修改使在途旧响应失效",
+      "status": "PASS"
+    },
+    {
+      "name": "断网失败不显示完成，允许重试",
+      "status": "PASS"
+    },
+    {
+      "name": "响应版本不一致时丢弃结果",
+      "status": "PASS"
+    },
+    {
+      "name": "重试成功后展示当前新结果",
+      "status": "PASS"
+    },
+    {
+      "name": "模拟存储刷新恢复三稿与当前版本",
+      "status": "PASS"
+    },
+    {
+      "name": "部分失败不产生完整审核结论",
+      "status": "PASS"
+    },
+    {
+      "name": "刷新中断的请求恢复为可重试失败",
+      "status": "PASS"
+    }
+  ]
+}

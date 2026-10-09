@@ -1,0 +1,14 @@
+test_blank_input_and_double_decision_rejected (test_workflow_v2.WorkflowV2Tests.test_blank_input_and_double_decision_rejected) ... ok
+test_clean_content_skips_draft (test_workflow_v2.WorkflowV2Tests.test_clean_content_skips_draft) ... ok
+test_llm_exception_and_unavailable_draft_do_not_fake_pass (test_workflow_v2.WorkflowV2Tests.test_llm_exception_and_unavailable_draft_do_not_fake_pass) ... ok
+test_low_rule_hit_but_semantics_normal_remains_explainable (test_workflow_v2.WorkflowV2Tests.test_low_rule_hit_but_semantics_normal_remains_explainable) ... ok
+test_obvious_risk_accept_then_clean_recheck (test_workflow_v2.WorkflowV2Tests.test_obvious_risk_accept_then_clean_recheck) ... ok
+test_recheck_llm_unavailable_is_not_full_pass (test_workflow_v2.WorkflowV2Tests.test_recheck_llm_unavailable_is_not_full_pass) ... ok
+test_recheck_still_has_risk (test_workflow_v2.WorkflowV2Tests.test_recheck_still_has_risk) ... ok
+test_reject_preserves_original_and_risk (test_workflow_v2.WorkflowV2Tests.test_reject_preserves_original_and_risk) ... ok
+test_semantic_only_issue_and_candidate (test_workflow_v2.WorkflowV2Tests.test_semantic_only_issue_and_candidate) ... ok
+
+----------------------------------------------------------------------
+Ran 9 tests in 0.000s
+
+OK

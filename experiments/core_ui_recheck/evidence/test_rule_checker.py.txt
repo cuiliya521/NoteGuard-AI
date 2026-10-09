@@ -1,0 +1,10 @@
+test_full_result_promise_pattern_wins_over_short_terms (test_rule_checker.RuleCheckerTests.test_full_result_promise_pattern_wins_over_short_terms) ... ok
+test_missing_empty_and_corrupt_rule_files_do_not_raise (test_rule_checker.RuleCheckerTests.test_missing_empty_and_corrupt_rule_files_do_not_raise) ... ok
+test_public_rules_keep_generic_education_risk_detection (test_rule_checker.RuleCheckerTests.test_public_rules_keep_generic_education_risk_detection) ... ok
+test_rule_add_disable_and_delete (test_rule_checker.RuleCheckerTests.test_rule_add_disable_and_delete) ... ok
+test_style_only_education_terms_do_not_create_compliance_findings (test_rule_checker.RuleCheckerTests.test_style_only_education_terms_do_not_create_compliance_findings) ... ok
+
+----------------------------------------------------------------------
+Ran 5 tests in 0.002s
+
+OK

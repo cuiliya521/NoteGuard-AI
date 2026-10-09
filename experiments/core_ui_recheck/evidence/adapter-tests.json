@@ -1,0 +1,7 @@
+{
+  "method": "Real V2 local rules + real local HTTP; 3 tests explicitly mock semantic/provider behavior; not online provider acceptance",
+  "run": 17,
+  "passed": 17,
+  "failures": 0,
+  "errors": 0
+}

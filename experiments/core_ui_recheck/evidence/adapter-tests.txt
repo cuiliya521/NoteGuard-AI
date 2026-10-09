@@ -1,0 +1,22 @@
+test_empty_body_rejected (experiments.core_ui_recheck.test_adapter.AdapterTests.test_empty_body_rejected) ... ok
+test_hash_and_snapshot_identity (experiments.core_ui_recheck.test_adapter.AdapterTests.test_hash_and_snapshot_identity) ... ok
+test_missing_key_no_fake_semantic (experiments.core_ui_recheck.test_adapter.AdapterTests.test_missing_key_no_fake_semantic) ... ok
+test_oversize_and_invalid_revision (experiments.core_ui_recheck.test_adapter.AdapterTests.test_oversize_and_invalid_revision) ... ok
+test_real_rules_confirmed_candidate_not_llm_generated (experiments.core_ui_recheck.test_adapter.AdapterTests.test_real_rules_confirmed_candidate_not_llm_generated) ... ok
+test_real_rules_original_offsets (experiments.core_ui_recheck.test_adapter.AdapterTests.test_real_rules_original_offsets) ... ok
+test_real_rules_reintroduced_promise (experiments.core_ui_recheck.test_adapter.AdapterTests.test_real_rules_reintroduced_promise) ... ok
+test_simulated_local_fallback_not_labeled_success (experiments.core_ui_recheck.test_adapter.AdapterTests.test_simulated_local_fallback_not_labeled_success) ... ok
+test_simulated_provider_failure_does_not_leak_error (experiments.core_ui_recheck.test_adapter.AdapterTests.test_simulated_provider_failure_does_not_leak_error) ... ok
+test_simulated_semantic_repeated_quote_positions (experiments.core_ui_recheck.test_adapter.AdapterTests.test_simulated_semantic_repeated_quote_positions) ... ok
+test_cross_origin_rejected (experiments.core_ui_recheck.test_adapter.HTTPTests.test_cross_origin_rejected) ... ok
+test_csrf_rejected (experiments.core_ui_recheck.test_adapter.HTTPTests.test_csrf_rejected) ... ok
+test_html_is_same_origin_and_no_fixture_outputs (experiments.core_ui_recheck.test_adapter.HTTPTests.test_html_is_same_origin_and_no_fixture_outputs) ... ok
+test_no_secret_file_or_source_exposure (experiments.core_ui_recheck.test_adapter.HTTPTests.test_no_secret_file_or_source_exposure) ... ok
+test_real_http_empty_body_400 (experiments.core_ui_recheck.test_adapter.HTTPTests.test_real_http_empty_body_400) ... ok
+test_real_http_rule_and_semantic_unavailable (experiments.core_ui_recheck.test_adapter.HTTPTests.test_real_http_rule_and_semantic_unavailable) ... ok
+test_session_isolation (experiments.core_ui_recheck.test_adapter.HTTPTests.test_session_isolation) ... ok
+
+----------------------------------------------------------------------
+Ran 17 tests in 0.540s
+
+OK
