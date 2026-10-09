@@ -17,6 +17,7 @@ DRAFT = {"titles": [f"测试标题{i}" for i in range(5)],
 
 
 def notes(monkeypatch, flag="1"):
+    monkeypatch.setenv("NOTEGUARD_FOREST_PAPER", "1")
     monkeypatch.setenv("NOTEGUARD_FOREST_PAPER_NOTES", flag)
     app = AppTest.from_file("app.py").run(timeout=30)
     app.session_state["forest_navigate_to"] = "招生笔记助手"
@@ -50,6 +51,7 @@ def test_native_breakdown_generation_edit_audit_and_return(monkeypatch):
           patch("services.llm.analyze_viral_image", return_value=ANALYSIS),
           patch("services.llm.generate_content_lab_draft", return_value=DRAFT) as generate):
         app = notes(monkeypatch)
+        original_audit_workspace = app.session_state["forest_workspace"]
         app.text_input(key="content_lab_material_title").set_value("输入素材标题")
         app.text_area(key="content_lab_material_body").set_value("输入素材正文").run(timeout=30)
         source.assert_not_called()
@@ -72,6 +74,8 @@ def test_native_breakdown_generation_edit_audit_and_return(monkeypatch):
         assert app.text_area(key="content_lab_draft_full_text").value == "人工编辑的最终正文"
         button(app, "内容审核").click().run(timeout=30)
         assert app.session_state["workspace_page"] == "协作审核 V2"
+        assert app.session_state["forest_workspace"] is original_audit_workspace
+        assert any("noteguard_forest_paper_v2" in str(e.proto) for e in app.get("component_instance"))
         assert not any("ngn-heading" in x.value for x in app.markdown)
         assert not app.exception
 
