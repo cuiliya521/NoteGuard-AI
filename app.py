@@ -4884,7 +4884,9 @@ def render_content_plan_card(plan: dict, key_prefix: str) -> None:
         )
 
 
-def render_content_lab_draft(draft: dict, key_prefix: str) -> None:
+def render_content_lab_draft(draft: dict, key_prefix: str, *, presentation=None) -> None:
+    if presentation is not None:
+        presentation.restore_draft_edits(draft, key_prefix)
     titles = draft.get("titles", []) if isinstance(draft.get("titles"), list) else []
     cover = draft.get("cover_copy", {}) if isinstance(draft.get("cover_copy"), dict) else {}
     body = draft.get("body", {}) if isinstance(draft.get("body"), dict) else {}
@@ -4913,6 +4915,8 @@ def render_content_lab_draft(draft: dict, key_prefix: str) -> None:
                 "选择一个标题作为最终标题",
                 titles[:5],
                 key=selected_title_key,
+                on_change=presentation.remember_draft_edits if presentation else None,
+                args=(draft, key_prefix) if presentation else None,
             )
         st.markdown(f"#### {escape(selected_title or '暂未生成标题')}")
         render_clipboard_button(
@@ -4947,6 +4951,8 @@ def render_content_lab_draft(draft: dict, key_prefix: str) -> None:
             value=full_text,
             height=440,
             key=f"{key_prefix}_full_text",
+            on_change=presentation.remember_draft_edits if presentation else None,
+            args=(draft, key_prefix) if presentation else None,
         )
         st.caption(f"{len(final_body)} 字 · 建议保持在 800–1500 字")
 
@@ -6000,6 +6006,7 @@ def render_content_growth_breakdown_v1(
     body: str,
     ocr_text: str,
     own_profile: dict,
+    *, presentation=None,
 ) -> None:
     """Turn the reference analysis into an immediately usable adaptation direction."""
     def usable(value: object, fallback: str) -> str:
@@ -6033,6 +6040,9 @@ def render_content_growth_breakdown_v1(
     own_business = usable(own_business, "当前演示业务")
     own_user = usable(own_user, "目标学生家长")
     own_pain = usable(own_pain, "具体学习问题")
+    if presentation is not None:
+        presentation.breakdown(target_user, pain_point, selling_point, conversion, own_business, own_pain, title_direction)
+        return
     st.markdown("## 第二步 · 拆解结果")
     with st.container(border=True):
         result_columns = st.columns(3, gap="medium")
@@ -6055,24 +6065,32 @@ def render_content_growth_breakdown_v1(
         st.caption("只复制人群、痛点和内容结构；缺失信息不会被当作事实用于生成。")
 
 
-def render_content_growth_assistant_v1(profile: dict[str, str]) -> None:
-    """A focused four-step operator workflow built on existing services and state."""
-    render_page_hero(
-        "🔥 小红书教育招生内容助手",
-        "拆同行跑量内容，生成你的招生笔记",
-        "把同行跑量内容丢进来，看懂能复制什么，快速变成自己的招生笔记。",
-    )
-    st.markdown(
-        """
-        <div class="step-indicator">
-            <span class="active">找参考爆款</span>
-            <span>AI告诉我为什么它能招生</span>
-            <span>生成我的招生笔记</span>
-            <span>一键审核</span>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+def render_content_growth_assistant_v1(profile: dict[str, str], *, presentation=None) -> None:
+    """The existing four-step workflow, with an optional isolated presentation."""
+    if presentation is None:
+        from services.notes_forest_paper_ui import enabled, render_notes_forest_paper
+        if enabled():
+            render_notes_forest_paper(profile, render_content_growth_assistant_v1)
+            return
+    if presentation is not None:
+        presentation.header()
+    else:
+        render_page_hero(
+            "🔥 小红书教育招生内容助手",
+            "拆同行跑量内容，生成你的招生笔记",
+            "把同行跑量内容丢进来，看懂能复制什么，快速变成自己的招生笔记。",
+        )
+        st.markdown(
+            """
+            <div class="step-indicator">
+                <span class="active">找参考爆款</span>
+                <span>AI告诉我为什么它能招生</span>
+                <span>生成我的招生笔记</span>
+                <span>一键审核</span>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
 
     notice = st.session_state.pop("content_plan_notice", "")
     if notice:
@@ -6088,84 +6106,85 @@ def render_content_growth_assistant_v1(profile: dict[str, str]) -> None:
         active_profile = DEMO_BUSINESS_PROFILE.copy()
         st.info("当前使用虚构演示账号：林老师（演示账号）· 初中数学学习规划。你可以在生成前临时修改。")
 
-    st.markdown("## 第一步 · 找参考爆款")
-    st.write("把你觉得好的内容丢进来，链接、截图或正文任选一种。")
-    input_tabs = st.tabs(
-        ["小红书链接", "爆款截图", "粘贴笔记正文"]
-    )
-    with input_tabs[0]:
-        link_row = st.columns([4, 1], gap="small", vertical_alignment="bottom")
-        link_row[0].text_input(
-            "小红书公开链接",
-            key="content_growth_link_url",
-            placeholder="粘贴同行笔记链接",
+    with st.container(key="ngnotes-material" if presentation else None):
+        st.markdown("## 第一步 · 找参考爆款")
+        st.write("把你觉得好的内容丢进来，链接、截图或正文任选一种。")
+        input_tabs = st.tabs(
+            ["小红书链接", "爆款截图", "粘贴笔记正文"]
         )
-        link_row[1].button(
-            "读取内容",
-            key="content_growth_import_link_v1",
-            on_click=import_content_growth_link,
-            type="primary",
-            width="stretch",
-        )
-        link_notice = st.session_state.pop("content_growth_link_notice", "")
-        if link_notice:
-            st.info(link_notice)
-    with input_tabs[1]:
-        screenshot_columns = st.columns([1.2, 0.8], gap="large")
-        with screenshot_columns[0]:
-            material_upload = st.file_uploader(
-                "上传同行爆款截图",
-                type=["png", "jpg", "jpeg", "webp"],
-                key="content_lab_material_upload",
+        with input_tabs[0]:
+            link_row = st.columns([4, 1], gap="small", vertical_alignment="bottom")
+            link_row[0].text_input(
+                "小红书公开链接",
+                key="content_growth_link_url",
+                placeholder="粘贴同行笔记链接",
             )
-            st.caption("支持拖拽上传，也可以复制微信、小红书或浏览器截图后粘贴。")
-            pasted_material = None
-            paste_button, component_error = load_paste_image_button()
-            if paste_button is None:
-                st.caption(component_error)
-            else:
-                try:
-                    paste_result = paste_button(
-                        label="点击这里后按 Ctrl+V 粘贴截图",
-                        key="content_lab_material_paste_v1",
-                        text_color="#ffffff",
-                        background_color="#ef4f5f",
-                        hover_background_color="#dc3f50",
-                        errors="ignore",
-                    )
-                    pasted_material, paste_message = extract_pasted_image(paste_result)
-                    if pasted_material is None:
-                        st.caption(paste_message)
-                except Exception as error:
-                    log_paste_component_error(error, "content growth v1")
-                    st.caption(PASTE_UNAVAILABLE_MESSAGE)
-        material_payload = None
-        if pasted_material is not None:
-            material_payload = process_content_lab_material_image(
-                pasted_material, "clipboard"
+            link_row[1].button(
+                "读取内容",
+                key="content_growth_import_link_v1",
+                on_click=import_content_growth_link,
+                type="primary",
+                width="stretch",
             )
-        elif material_upload is not None:
-            material_payload = process_content_lab_material_image(
-                material_upload, "upload"
+            link_notice = st.session_state.pop("content_growth_link_notice", "")
+            if link_notice:
+                st.info(link_notice)
+        with input_tabs[1]:
+            screenshot_columns = st.columns([1.2, 0.8], gap="large")
+            with screenshot_columns[0]:
+                material_upload = st.file_uploader(
+                    "上传同行爆款截图",
+                    type=["png", "jpg", "jpeg", "webp"],
+                    key="content_lab_material_upload",
+                )
+                st.caption("支持拖拽上传，也可以复制微信、小红书或浏览器截图后粘贴。")
+                pasted_material = None
+                paste_button, component_error = load_paste_image_button()
+                if paste_button is None:
+                    st.caption(component_error)
+                else:
+                    try:
+                        paste_result = paste_button(
+                            label="点击这里后按 Ctrl+V 粘贴截图",
+                            key="content_lab_material_paste_v1",
+                            text_color="#ffffff",
+                            background_color="#075e49" if presentation else "#ef4f5f",
+                            hover_background_color="#07533f" if presentation else "#dc3f50",
+                            errors="ignore",
+                        )
+                        pasted_material, paste_message = extract_pasted_image(paste_result)
+                        if pasted_material is None:
+                            st.caption(paste_message)
+                    except Exception as error:
+                        log_paste_component_error(error, "content growth v1")
+                        st.caption(PASTE_UNAVAILABLE_MESSAGE)
+            material_payload = None
+            if pasted_material is not None:
+                material_payload = process_content_lab_material_image(
+                    pasted_material, "clipboard"
+                )
+            elif material_upload is not None:
+                material_payload = process_content_lab_material_image(
+                    material_upload, "upload"
+                )
+            stored_image = st.session_state.get("content_lab_material_image_bytes", b"")
+            with screenshot_columns[1]:
+                if stored_image:
+                    st.image(stored_image, caption="当前同行素材", width="stretch")
+                else:
+                    st.caption("上传后在这里确认素材。")
+        with input_tabs[2]:
+            st.text_input(
+                "同行笔记标题（可选）",
+                key="content_lab_material_title",
+                placeholder="粘贴原标题",
             )
-        stored_image = st.session_state.get("content_lab_material_image_bytes", b"")
-        with screenshot_columns[1]:
-            if stored_image:
-                st.image(stored_image, caption="当前同行素材", width="stretch")
-            else:
-                st.caption("上传后在这里确认素材。")
-    with input_tabs[2]:
-        st.text_input(
-            "同行笔记标题（可选）",
-            key="content_lab_material_title",
-            placeholder="粘贴原标题",
-        )
-        st.text_area(
-            "同行笔记正文",
-            key="content_lab_material_body",
-            placeholder="直接粘贴正文或主要文案",
-            height=180,
-        )
+            st.text_area(
+                "同行笔记正文",
+                key="content_lab_material_body",
+                placeholder="直接粘贴正文或主要文案",
+                height=180,
+            )
 
     material_title = str(
         st.session_state.get("content_lab_material_title") or ""
@@ -6199,7 +6218,7 @@ def render_content_growth_assistant_v1(profile: dict[str, str]) -> None:
         and st.session_state.get("content_lab_material_analysis_key") == material_key
         and isinstance(st.session_state.get("content_lab_material_suggestion"), dict)
     )
-    if has_material and not analysis_is_current:
+    if has_material and (not analysis_is_current or (presentation and st.session_state.get("content_lab_material_error"))):
         st.caption("内容已准备好。点击后才会开始 AI 拆解，不会因离开输入框自动运行。")
         start_breakdown = st.button(
             "开始拆解同行内容",
@@ -6228,7 +6247,10 @@ def render_content_growth_assistant_v1(profile: dict[str, str]) -> None:
                     fallback_profile=active_profile,
                 )
                 st.write("正在整理可借鉴点与不建议照搬的内容")
-                status.update(label="拆解完成", state="complete", expanded=False)
+                if presentation and material_error:
+                    status.update(label="拆解未完整完成", state="error", expanded=True)
+                else:
+                    status.update(label="拆解完成", state="complete", expanded=False)
             st.session_state["content_lab_material_analysis_key"] = material_key
             st.session_state["content_lab_material_suggestion"] = suggestion
             st.session_state["content_lab_material_error"] = material_error
@@ -6246,7 +6268,10 @@ def render_content_growth_assistant_v1(profile: dict[str, str]) -> None:
     if not has_material:
         st.caption("添加一篇同行内容后，点击“开始拆解同行内容”查看结果。")
     elif isinstance(suggestion, dict):
-        st.markdown("## 第二步 · AI告诉我为什么它能招生")
+        if presentation is None:
+            st.markdown("## 第二步 · AI告诉我为什么它能招生")
+        elif st.session_state.get("content_lab_material_error"):
+            st.warning("AI 拆解未完整完成；下方可能包含业务资料回退信息，不能视为完整 AI 分析。可重新点击拆解按钮重试。")
         current_profile = {
             "product_name": str(
                 st.session_state.get("content_lab_confirm_product_name") or ""
@@ -6276,10 +6301,11 @@ def render_content_growth_assistant_v1(profile: dict[str, str]) -> None:
             material_body,
             material_ocr_text,
             current_profile,
+            presentation=presentation,
         )
 
         st.markdown("## 第三步 · 生成我的招生笔记")
-        with st.container(border=True):
+        with st.container(border=True, key="ngnotes-account" if presentation else None):
             account_row = st.columns([4, 1], gap="small", vertical_alignment="center")
             with account_row[0]:
                 st.markdown(
@@ -6381,6 +6407,8 @@ def render_content_growth_assistant_v1(profile: dict[str, str]) -> None:
                         selected_reference=selected_reference,
                         selected_method=selected_method,
                     )
+                    if presentation is not None:
+                        st.session_state.pop("ngnotes_draft_edits", None)
             except ValueError:
                 st.info("生成暂时不可用，已保留当前素材和业务信息，请稍后重试。")
             else:
@@ -6389,7 +6417,8 @@ def render_content_growth_assistant_v1(profile: dict[str, str]) -> None:
     generated_draft = st.session_state.get("content_lab_generated_draft")
     if isinstance(generated_draft, dict):
         st.markdown("## 第四步 · 审核发布")
-        render_content_lab_draft(generated_draft, "content_lab_draft")
+        with st.container(key="ngnotes-paper" if presentation else None):
+            render_content_lab_draft(generated_draft, "content_lab_draft", presentation=presentation)
 
     with st.expander("🔬 高级玩法（运营人员使用）", expanded=False):
         st.caption("案例库、方法模型、共同结构和案例对比集中在这里，不影响日常生成流程。")
