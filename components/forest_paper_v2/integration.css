@@ -1,0 +1,20 @@
+/* Functional states only. Frozen Forest & Paper typography/colors/layout unchanged. */
+[hidden]{display:none!important}button:disabled{opacity:.55;cursor:not-allowed}
+#live-scope{font-size:10px;line-height:1.55;margin:9px 0 0}
+#final-actions{display:grid;gap:8px;margin:0 0 12px}
+#final-actions .btn{width:100%}.tabs{gap:22px}
+.difference-log{padding:8px 0;font-size:12px;line-height:1.8}
+.difference-log del{color:#825b3b}.difference-log ins{color:#355635;text-decoration:none;background:#e8efdf}
+.mark{cursor:pointer}.panel-scroll{scroll-padding-bottom:30px}
+.service-status{font-size:13px;line-height:1.8;color:#596e4b;margin:16px 0}
+#input-error{color:#a45c3a}dialog{max-height:calc(100dvh - 40px);overflow:auto}
+.shell{height:100dvh}.decision-state{overflow-wrap:anywhere}
+/* Default right-panel full-draft entry stays outside expandable evidence text. */
+.evidence[open]{max-height:100px}
+.risk-nav{max-height:136px;overflow:auto;scrollbar-width:thin}
+
+/* Keep long status/scope text readable through normal footer scrolling. */
+.decisions{max-height:50%;min-height:0;overflow-y:auto;scrollbar-width:thin;overflow-wrap:anywhere}
+/* Real document titles must not displace the adjacent scope label. */
+.heading h1{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.heading span{flex-shrink:0;margin-left:12px}

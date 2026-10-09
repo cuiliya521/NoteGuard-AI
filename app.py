@@ -7456,7 +7456,12 @@ def main() -> None:
         "内容实验室": "招生笔记助手",
         "内容增长助手": "招生笔记助手",
     }
+    forest_target = st.session_state.pop("forest_navigate_to", None)
+    if forest_target in navigation_descriptions:
+        st.session_state["workspace_page"] = forest_target
     current_page = st.session_state.get("workspace_page")
+    if current_page is None and os.getenv("NOTEGUARD_FOREST_PAPER", "0") == "1":
+        st.session_state["workspace_page"] = "协作审核 V2"
     if current_page in legacy_navigation:
         st.session_state["workspace_page"] = legacy_navigation[current_page]
     with st.sidebar:
@@ -8372,4 +8377,6 @@ def main() -> None:
                 st.warning(f"内容重构暂未完成：{note_generation_error}")
 
 if __name__ == "__main__":
+    # Controlled V2 release. Set this default to "0" to restore the retained old UI.
+    os.environ.setdefault("NOTEGUARD_FOREST_PAPER", "1")
     main()

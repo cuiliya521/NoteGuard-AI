@@ -13,6 +13,13 @@ EXAMPLE_BODY = "初二数学线上1v1陪练，保证每位学员一个月提高5
 
 
 def render_workflow_v2(rules: list) -> None:
+    # Explicit experiment opt-in. Stable V2 presentation remains the default.
+    import os
+    if os.getenv("NOTEGUARD_FOREST_PAPER", "0") == "1":
+        from services.forest_paper_ui_v2 import render_forest_paper_v2
+        st.session_state["forest_full_app"] = True
+        render_forest_paper_v2(rules)
+        return
     st.markdown("""
         <div class="v2-heading">
             <h1>发布前协作审核 · V2</h1>
@@ -136,3 +143,4 @@ def render_workflow_v2(rules: list) -> None:
             st.write(f"- 复检语义仍提示 · {item.location}「{item.excerpt}」 · {item.reason}")
         if state.final_semantic.error:
             st.warning(f"语义复检不可用：{state.final_semantic.error}")
+
