@@ -134,7 +134,7 @@ window.addEventListener("message", event=>{
   if(pending && args.ack===pending.id){const action=pending.action;clearTimeout(responseTimer);pending=null;lockButtons(false);if(!args.model.error){$("input-dialog").close();$("edit-dialog").close();if(["accept","edit_accept","save_final","recheck"].includes(action))view="final";if(action==="audit")view="original";}}
   model=args.model;resumeToken=args.resume_token;
   try{localStorage.setItem(storageKey,resumeToken);}catch{}
-  render();if(args.resume_message)$("decision-state").textContent=args.resume_message;
+  render();if(args.resume_message && !model.original)$("decision-state").textContent=args.resume_message;
   let height=900;try{height=Math.max(720,window.parent.innerHeight);}catch{}
   send("streamlit:setFrameHeight",{height});
 });

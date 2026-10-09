@@ -5,7 +5,7 @@ const root=path.join(__dirname,'..','components','forest_paper_v2');
 const source=fs.readFileSync(path.join(root,'component.js'),'utf8');
 const review={rules:[{field:'body',source:'rule',excerpt:'保证',start:1,end:3,positioning:'detector-offset',category:'效果承诺',reason:'真实规则测试引用',severity:'high'}],semantic:[],semantic_available:false,status:'partial_failure',message:'语义未完成',scope_note:'未发现明显风险不等于保证内容绝对合规'};
 function base(){return {version:1,path:'needs_decision',original:{title:'标题',body:'😀保证提分'},draft:{title:'标题',body:'😀陪练',source:'TEST_DOUBLE',reason:'unit',confirmation_items:[]},original_review:review,final:null,final_revision:0,final_status:'not_adopted',final_review:null,error:'',diff:[],draft_diff:[]};}
-function harness(model=base(),savedToken){
+function harness(model=base(),savedToken,resumeMessage=''){
  const dom=new JSDOM(fs.readFileSync(path.join(root,'index.html'),'utf8'),{url:'https://local-test.invalid/component/',runScripts:'outside-only'}),w=dom.window;
  let n=0;w.crypto.randomUUID=()=>`unit-${++n}`;
  w.HTMLDialogElement.prototype.showModal=function(){this.open=true};w.HTMLDialogElement.prototype.close=function(){this.open=false};
@@ -14,7 +14,7 @@ function harness(model=base(),savedToken){
  const sent=[];w.postMessage=(m)=>sent.push(m);
  if(savedToken)w.localStorage.setItem('noteguard.forest-paper.v2.resume',savedToken);
  w.eval(source);
- function receive(next,ack='',token='token',foreign=false){w.dispatchEvent(new w.MessageEvent('message',{source:foreign?{}:w.parent,origin:'https://local-test.invalid',data:{type:'streamlit:render',args:{model:next,ack,resume_token:token}}}));}
+ function receive(next,ack='',token='token',foreign=false){w.dispatchEvent(new w.MessageEvent('message',{source:foreign?{}:w.parent,origin:'https://local-test.invalid',data:{type:'streamlit:render',args:{model:next,ack,resume_token:token,resume_message:resumeMessage}}}));}
  receive(model);
  return {w,sent,receive,doc:w.document,events:()=>sent.filter(x=>x.type==='streamlit:setComponentValue').map(x=>x.value)};
 }
@@ -63,4 +63,12 @@ test('failed recheck clears final evidence, preserves original and retry recover
  h.doc.getElementById('original-tab').click();assert.match(h.doc.getElementById('paper').textContent,/保证/);
  h.doc.getElementById('final-tab').click();h.doc.getElementById('recheck').click();const retry=h.events()[1];h.receive({...m,version:3},retry.id);assert.match(h.doc.getElementById('decision-state').textContent,/未发现明显风险/);
  h.receive(failed);assert.match(h.doc.getElementById('decision-state').textContent,/未发现明显风险/);
+});
+test('expired resume notice cannot replace valid new audit or recheck status',()=>{
+ const m=base();m.original=null;m.draft=null;m.original_review=null;
+ const h=harness(m,undefined,'会话已过期，请重新审核。');
+ assert.match(h.doc.getElementById('decision-state').textContent,/已过期/);
+ const next={...base(),version:2,final:{title:'标题',body:'确认稿'},final_status:'completed',final_review:{rules:[],semantic:[],message:'未发现明显风险'}};
+ h.receive(next);assert.match(h.doc.getElementById('decision-state').textContent,/未发现明显风险/);
+ assert.doesNotMatch(h.doc.getElementById('decision-state').textContent,/已过期/);
 });
