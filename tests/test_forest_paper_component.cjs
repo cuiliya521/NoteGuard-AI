@@ -43,3 +43,24 @@ test('Unicode detector offsets use code points and risk buttons are keyboard acc
 
 test('transport timeout unlocks retry and never displays approval',()=>{const h=harness();h.doc.getElementById('accept').click();h.w.testTimeout();assert.equal(h.doc.getElementById('accept').disabled,false);assert.match(h.doc.getElementById('decision-state').textContent,/尚未确认/);});
 test('legacy modules emit real navigation events',()=>{const h=harness();h.doc.querySelectorAll('.rail .nav')[1].click();assert.equal(h.events()[0].action,'navigate');assert.equal(h.events()[0].page,'notes');});
+
+test('adopted status stays truthful on original, draft and final views',()=>{
+ const m=base();m.path='accepted';m.final={title:'最终标题',body:'最终正文'};m.final_status='completed';m.final_review={...review,rules:[],semantic:[],semantic_available:true,message:'未发现明显风险'};
+ const h=harness(m);for(const tab of ['original-tab','draft-tab','final-tab']){h.doc.getElementById(tab).click();assert.doesNotMatch(h.doc.querySelector('.panel-title .warn').textContent,/待人工确认/);}
+ assert.match(h.doc.querySelector('.decisions > .scope').textContent,/最终采用稿/);
+ assert.match(h.doc.getElementById('paper').textContent,/原文 → 最终采用稿/);
+});
+test('final risk differences never label AI draft as final comparison',()=>{
+ const m=base();m.final={title:'最终',body:'😀保证'};m.final_status='completed';m.final_review=review;
+ const h=harness(m);h.doc.getElementById('final-tab').click();assert.match(h.doc.querySelector('.diff-title').textContent,/原文 → 最终采用稿/);assert.match(h.doc.querySelector('.neutral').textContent,/AI 建议稿单独保留/);
+ h.doc.getElementById('original-tab').click();assert.match(h.doc.querySelector('.diff-title').textContent,/原文 → AI 建议稿/);
+});
+test('failed recheck clears final evidence, preserves original and retry recovers',()=>{
+ const m=base();m.final={title:'最终',body:'确认稿'};m.final_status='completed';m.final_review={...review,rules:[],semantic_available:true,message:'未发现明显风险'};
+ const h=harness(m);h.doc.getElementById('final-tab').click();h.doc.getElementById('recheck').click();
+ const ev=h.events()[0];const failed={...m,version:2,final_status:'failed',final_review:null};h.receive(failed,ev.id);
+ assert.match(h.doc.querySelector('.panel-title .warn').textContent,/未完成/);assert.doesNotMatch(h.doc.getElementById('paper').textContent,/保证/);assert.match(h.doc.getElementById('decision-state').textContent,/重试/);
+ h.doc.getElementById('original-tab').click();assert.match(h.doc.getElementById('paper').textContent,/保证/);
+ h.doc.getElementById('final-tab').click();h.doc.getElementById('recheck').click();const retry=h.events()[1];h.receive({...m,version:3},retry.id);assert.match(h.doc.getElementById('decision-state').textContent,/未发现明显风险/);
+ h.receive(failed);assert.match(h.doc.getElementById('decision-state').textContent,/未发现明显风险/);
+});

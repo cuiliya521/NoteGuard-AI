@@ -12,3 +12,6 @@
 /* Default right-panel full-draft entry stays outside expandable evidence text. */
 .evidence[open]{max-height:100px}
 .risk-nav{max-height:136px;overflow:auto;scrollbar-width:thin}
+
+/* Keep long status/scope text readable through normal footer scrolling. */
+.decisions{max-height:50%;min-height:0;overflow-y:auto;scrollbar-width:thin;overflow-wrap:anywhere}
