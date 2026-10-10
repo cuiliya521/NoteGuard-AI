@@ -85,6 +85,19 @@ function renderRisk() {
   const full=$("view-full-draft");if(full){full.disabled=!model.draft;full.onclick=()=>switchView("draft");}
   $("live-scope").textContent = review?.scope_note || "尚未评测。";
 }
+function syncFrameHeight() {
+  const mobile=typeof window.matchMedia==="function" && window.matchMedia("(max-width: 850px)").matches;
+  if(mobile){
+    // Mobile is a natural-height vertical document; keep the entire risk and decision panel reachable.
+    const shell=document.querySelector(".shell");
+    const naturalHeight=Math.ceil(shell?.getBoundingClientRect().height||0);
+    send("streamlit:setFrameHeight",{height:Math.max(720,naturalHeight+20)});
+    return;
+  }
+  let height=900;try{height=Math.max(720,window.parent.innerHeight);}catch{}
+  send("streamlit:setFrameHeight",{height});
+}
+window.addEventListener("resize",syncFrameHeight);
 function render() {
   if(!model)return;
   if(view==="draft"&&!model.draft||view==="final"&&!model.final)view="original";
@@ -97,6 +110,7 @@ function render() {
   $("decision-state").textContent=model.error || (model.final ? statusText() : model.path==="rejected"?"已拒绝建议；原文与原风险结果保留。":model.original_review?.status==="partial_failure"?"语义审核未完成，可重新审核。":"");
   $("final-details").hidden=true;
   if(pending)lockButtons(true);
+  syncFrameHeight();
 }
 function switchView(next) {view=next;selected=0;render();}
 function openEdit(mode) {
@@ -139,7 +153,5 @@ window.addEventListener("message", event=>{
   model=args.model;resumeToken=args.resume_token;
   try{localStorage.setItem(storageKey,resumeToken);}catch{}
   render();if(args.resume_message && !model.original)$("decision-state").textContent=args.resume_message;
-  let height=900;try{height=Math.max(720,window.parent.innerHeight);}catch{}
-  send("streamlit:setFrameHeight",{height});
 });
 send("streamlit:componentReady",{apiVersion:1});
