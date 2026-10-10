@@ -7498,6 +7498,27 @@ def main() -> None:
     if st.session_state.get("demo_mode"):
         creator_profile = load_creator_profile(DEMO_CREATOR_PROFILE_PATH)
 
+    # Mobile exit from the Forest & Paper audit workspace to legacy modules:
+    # expose a return control, without changing desktop layouts or the legacy renderers.
+    if os.getenv("NOTEGUARD_FOREST_PAPER", "0") == "1" and workspace_page in (
+        "招生笔记助手", "历史与资产", "审核规则中心",
+    ):
+        st.markdown("""
+        <style>
+        @media (min-width: 851px) {
+          .st-key-forest_mobile_return {display: none !important}
+        }
+        @media (max-width: 850px) {
+          .st-key-forest_mobile_return {margin: 0 0 10px}
+          .st-key-forest_mobile_return button {min-height: 44px}
+        }
+        </style>
+        """, unsafe_allow_html=True)
+        with st.container(key="forest_mobile_return"):
+            if st.button("← 返回协作审核 V2", key="forest_mobile_return_button", width="stretch"):
+                st.session_state["workspace_page"] = "协作审核 V2"
+                st.rerun()
+
     if workspace_page == "审核规则中心":
         render_rule_management()
         return
