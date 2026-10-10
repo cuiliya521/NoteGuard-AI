@@ -7494,7 +7494,7 @@ def main() -> None:
         <style>
         .st-key-forest_mobile_nav {display:none!important}
         @media (max-width:850px) {
-          .st-key-forest_mobile_nav {display:block!important; margin:0 0 12px!important}
+          .st-key-forest_mobile_nav {display:block!important; position:relative; z-index:2; padding:56px 12px 10px!important; margin:0 0 12px!important; background:#f4f6f1}
           .st-key-forest_mobile_nav button {min-height:48px!important; width:100%; border-radius:9px; font-size:14px}
         }
         </style>
