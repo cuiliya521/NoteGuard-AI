@@ -59,3 +59,16 @@
   dialog{width:calc(100vw - 24px);max-width:calc(100vw - 24px);padding:20px 16px;box-sizing:border-box}
   dialog textarea{max-height:35dvh}
 }
+
+/* R1: central original editor. The reviewed original remains a separate immutable snapshot. */
+.inline-editor{padding:34px 40px 40px;display:flex;flex-direction:column;gap:10px;min-height:100%;background:var(--paper,#fffef9)}
+.inline-editor[hidden],#paper[hidden]{display:none!important}
+.inline-editor label{font-size:12px;letter-spacing:1px;color:#647b67;font-weight:600;margin-top:8px}
+.inline-editor input,.inline-editor textarea{width:100%;border:1px solid #d6e1d4;border-radius:8px;background:#fff;color:#1d4030;padding:12px 14px;font:inherit;outline-offset:3px}
+.inline-editor input{font-size:20px;font-weight:600}
+.inline-editor textarea{flex:1;min-height:240px;resize:vertical;line-height:1.9;font-size:16px}
+.inline-error{color:#a34c34;font-size:12px;min-height:18px;margin:0}
+.inline-actions{display:flex;gap:10px;justify-content:flex-end;margin-top:8px}
+.inline-actions .btn.primary{width:auto;min-width:126px}
+#edit-original{margin:auto 0 auto 8px;white-space:nowrap}
+@media(max-width:850px){.inline-editor{padding:20px}.inline-editor textarea{min-height:280px}}
