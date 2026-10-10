@@ -41,6 +41,25 @@ def test_component_navigation_reaches_original_complete_app(monkeypatch):
         assert not app.exception
 
 
+
+def test_phone_return_control_preserves_existing_audit_workspace(monkeypatch):
+    """The mobile-only control is present on each legacy module and really navigates back."""
+    monkeypatch.setenv('NOTEGUARD_FOREST_PAPER', '1')
+    app = AppTest.from_file('app.py').run(timeout=30)
+    assert not app.exception
+    original_workspace = app.session_state['forest_workspace']
+    for page in ('招生笔记助手', '历史与资产', '审核规则中心'):
+        app.session_state['forest_navigate_to'] = page
+        app.run(timeout=30)
+        assert not app.exception
+        assert app.session_state['workspace_page'] == page
+        app.button(key='forest_mobile_return_button').click().run(timeout=30)
+        assert not app.exception
+        assert app.session_state['workspace_page'] == '协作审核 V2'
+        assert app.session_state['forest_workspace'] is original_workspace
+        assert any('noteguard_forest_paper_v2' in str(e.proto) for e in app.get('component_instance'))
+
+
 def test_flag_disabled_keeps_existing_default(monkeypatch):
     monkeypatch.delenv('NOTEGUARD_FOREST_PAPER', raising=False)
     app = AppTest.from_file('app.py').run(timeout=30)
