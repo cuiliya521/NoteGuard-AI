@@ -86,3 +86,27 @@ test('complete app does not expose integration experiment badge or obsolete navi
  assert.equal(h.doc.querySelectorAll('.rail .nav')[1].getAttribute('title'),null);
  assert.doesNotMatch(h.doc.body.textContent,/V2 集成实验/);
 });
+
+
+test('mobile four-module navigation is retained in scoped responsive layout',()=>{
+ const css=fs.readFileSync(path.join(root,'integration.css'),'utf8');
+ assert.match(css,/@media\s*\(max-width:\s*850px\)/);
+ assert.match(css,/\.rail\{display:grid!important;grid-template-columns:repeat\(4,minmax\(0,1fr\)\)/);
+ assert.match(css,/\.panel\{min-height:0;overflow:visible\}/);
+ assert.match(css,/\.decisions\{max-height:none;min-height:0;overflow:visible/);
+ const h=harness(),nav=Array.from(h.doc.querySelectorAll('.rail .nav'));
+ assert.deepEqual(nav.map(el=>el.textContent.trim()),['内容审核','招生笔记','历史与资产','审核规则']);
+ nav[1].click();assert.equal(h.events()[0].page,'notes');
+});
+
+test('mobile iframe height follows stacked document and desktop baseline is unchanged',()=>{
+ const h=harness();h.w.matchMedia=()=>({matches:true});
+ h.doc.querySelector('.shell').getBoundingClientRect=()=>({height:1642});
+ h.receive({...base(),version:2},'','token');
+ const mobile=h.sent.filter(x=>x.type==='streamlit:setFrameHeight').at(-1);
+ assert.equal(mobile.height,1662);
+ h.w.matchMedia=()=>({matches:false});
+ h.receive({...base(),version:3},'','token');
+ const desktop=h.sent.filter(x=>x.type==='streamlit:setFrameHeight').at(-1);
+ assert.ok(desktop.height>=720);
+});
