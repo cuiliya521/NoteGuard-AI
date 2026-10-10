@@ -110,3 +110,28 @@ test('mobile iframe height follows stacked document and desktop baseline is unch
  const desktop=h.sent.filter(x=>x.type==='streamlit:setFrameHeight').at(-1);
  assert.ok(desktop.height>=720);
 });
+
+test('inline audit blocks blank body and submits exact independent input',()=>{
+ const h=harness({...base(),original:null,draft:null,original_review:null,path:'input'});
+ assert.equal(h.doc.getElementById('inline-editor').hidden,false);
+ h.doc.getElementById('inline-audit').click();assert.equal(h.events().length,0);
+ assert.match(h.doc.getElementById('inline-error').textContent,/不能为空/);
+ for(const [id,value] of [['inline-title','输入标题'],['inline-body','输入正文']]){
+  const e=h.doc.getElementById(id);e.value=value;e.dispatchEvent(new h.w.Event('input'));
+ }
+ h.doc.getElementById('inline-audit').click();assert.equal(h.events()[0].action,'audit');
+ assert.deepEqual(JSON.parse(JSON.stringify(h.events()[0].document)),{title:'输入标题',body:'输入正文'});
+});
+test('editing original hides all stale evidence and cancellation restores saved result',()=>{
+ const h=harness();h.doc.getElementById('edit-original').click();
+ assert.equal(h.doc.getElementById('paper').hidden,true);
+ assert.equal(h.doc.querySelector('.decisions').hidden,true);
+ assert.equal(h.doc.getElementById('risk-nav').textContent,'');
+ assert.match(h.doc.getElementById('doc-count').textContent,/待审核/);
+ assert.doesNotMatch(h.doc.getElementById('doc-count').textContent,/项风险/);
+ h.doc.getElementById('inline-body').value='未保存修改';
+ h.doc.getElementById('inline-cancel').click();
+ assert.match(h.doc.getElementById('paper').textContent,/😀保证/);
+ assert.match(h.doc.getElementById('doc-count').textContent,/1 项风险/);
+ assert.equal(h.events().length,0);
+});

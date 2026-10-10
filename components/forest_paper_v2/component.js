@@ -71,7 +71,7 @@ function renderPaper() {
   $("paper").setAttribute("aria-labelledby",view+"-tab");
   $("view-label").textContent = isEditing ? "可编辑 · 提交后生成原文快照" : view === "draft" ? "候选稿 · 未复检" : view === "final" ? statusText() : "原文快照 · 只读";
   $("foot-text").textContent = view === "final" ? "原文、建议稿、最终采用稿分别保留" : "原文保留，建议不会覆盖正文";
-  $("doc-count").textContent = activeReview() ? `${risksFor(activeReview()).length} 项风险证据` : "尚未评测";
+  $("doc-count").textContent = isEditing ? "编辑中 · 待审核" : activeReview() ? `${risksFor(activeReview()).length} 项风险证据` : "尚未评测";
   document.querySelectorAll(".mark[data-risk]").forEach(b=>b.onclick=()=>selectRisk(Number(b.dataset.risk)));
 }
 function diffHTML(rows) {
