@@ -8377,6 +8377,7 @@ def main() -> None:
                 st.warning(f"内容重构暂未完成：{note_generation_error}")
 
 if __name__ == "__main__":
-    # Controlled V2 release. Set this default to "0" to restore the retained old UI.
-    os.environ.setdefault("NOTEGUARD_FOREST_PAPER", "1")
+    # Temporary mobile-safe rollback: keep Forest & Paper code but run the original UI.
+    # Explicitly disable it even if a previously set environment value is still present.
+    os.environ["NOTEGUARD_FOREST_PAPER"] = "0"
     main()
