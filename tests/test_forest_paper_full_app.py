@@ -42,18 +42,26 @@ def test_component_navigation_reaches_original_complete_app(monkeypatch):
 
 
 
-def test_phone_return_control_preserves_existing_audit_workspace(monkeypatch):
-    """The mobile-only control is present on each legacy module and really navigates back."""
+def test_phone_host_navigation_preserves_all_four_routes_and_audit_workspace(monkeypatch):
+    """Host navigation operates outside iframe and remains mounted on every legacy page."""
     monkeypatch.setenv('NOTEGUARD_FOREST_PAPER', '1')
     app = AppTest.from_file('app.py').run(timeout=30)
     assert not app.exception
     original_workspace = app.session_state['forest_workspace']
+    keys = (
+        'forest_mobile_nav_协作审核 V2',
+        'forest_mobile_nav_招生笔记助手',
+        'forest_mobile_nav_历史与资产',
+        'forest_mobile_nav_审核规则中心',
+    )
     for page in ('招生笔记助手', '历史与资产', '审核规则中心'):
-        app.session_state['forest_navigate_to'] = page
-        app.run(timeout=30)
+        for key in keys:
+            assert app.button(key=key) is not None
+        app.button(key=f'forest_mobile_nav_{page}').click().run(timeout=30)
         assert not app.exception
         assert app.session_state['workspace_page'] == page
-        app.button(key='forest_mobile_return_button').click().run(timeout=30)
+        assert app.button(key='forest_mobile_nav_协作审核 V2') is not None
+        app.button(key='forest_mobile_nav_协作审核 V2').click().run(timeout=30)
         assert not app.exception
         assert app.session_state['workspace_page'] == '协作审核 V2'
         assert app.session_state['forest_workspace'] is original_workspace
