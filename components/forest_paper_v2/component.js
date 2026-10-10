@@ -81,6 +81,16 @@ function statusText() {
   return ({not_adopted:"尚未采用",pending:"待复检",running:"复检中",failed:"复检未完成 · 可重试",completed:model.final_review?.message ?? "尚未评测"})[model.final_status];
 }
 function renderRisk() {
+  if (editingOriginal && view === "original") {
+    document.querySelector(".panel-title h2").innerHTML = '风险审阅<span class="count">0</span>';
+    document.querySelector(".panel-title .warn").textContent = "等待审核";
+    document.querySelector(".counts").textContent = "提交后显示本次审核结果";
+    $("risk-nav").innerHTML = "";
+    $("evidence-context").hidden = true;
+    $("review-detail").innerHTML = '<p class="service-status">输入标题和正文，点击「开始审核」后查看风险定位与 AI 建议。</p>';
+    $("live-scope").textContent = "编辑中 · 旧审核结果不适用于未提交的修改";
+    return;
+  }
   const review = activeReview(), risks = risksFor(review);selected=Math.min(selected,Math.max(0,risks.length-1));
   document.querySelector(".panel-title h2").innerHTML=`${view==="final"?"最终稿复检":"风险审阅"}<span class="count">${risks.length}</span>`;
   document.querySelector(".panel-title .warn").textContent=view==="final"?statusText():model.final?`已采用 · ${statusText()}`:model.path==="rejected"?"已拒绝建议":model.state==="input"||!model.original?"尚未评测":"待人工确认";
@@ -115,7 +125,8 @@ function render() {
   ["accept","reject","edit"].forEach(id=>$(id).hidden=!!model.final);
   $("final-actions").hidden=!model.final;
   document.querySelector(".decisions > .scope").textContent=model.final ? "以下操作针对最终采用稿；原文与 AI 建议稿保留。" : "以下操作均针对整份 AI 建议稿";
-  ["accept","reject","edit"].forEach(id=>$(id).disabled=!model.draft||model.path!=="needs_decision");
+  ["accept","reject","edit"].forEach(id=>$(id).disabled=editingOriginal||!model.draft||model.path!=="needs_decision");
+  document.querySelector(".decisions").hidden = editingOriginal && view === "original";
   $("decision-state").textContent=model.error || (model.final ? statusText() : model.path==="rejected"?"已拒绝建议；原文与原风险结果保留。":model.original_review?.status==="partial_failure"?"语义审核未完成，可重新审核。":"");
   $("final-details").hidden=true;
   if(pending)lockButtons(true);
