@@ -5,6 +5,7 @@ document.querySelectorAll("[data-icon]").forEach(el=>el.innerHTML=icon(el.datase
 const $ = id => document.getElementById(id);
 const escapeHTML = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 let model = null, view = "original", selected = 0, pending = null, editMode = "edit_accept";
+let editingOriginal = true, originalDraft = {title:"",body:""}, draftDirty = false;
 let parentOrigin = "*", restored = false, resumeToken = "", transportReady = false;
 let responseTimer = null;
 const storageKey = "noteguard.forest-paper.v2.resume";
@@ -54,13 +55,21 @@ function highlight(text, field) {
 }
 function selectRisk(index) {selected=index;render();document.querySelector('.mark.active')?.scrollIntoView({block:"nearest"});}
 function renderPaper() {
+  const isEditing = editingOriginal && view === "original";
+  $("paper").hidden = isEditing;
+  $("inline-editor").hidden = !isEditing;
+  $("edit-original").hidden = isEditing || view !== "original";
+  if (isEditing) {
+    if ($("inline-title").value !== originalDraft.title) $("inline-title").value = originalDraft.title;
+    if ($("inline-body").value !== originalDraft.body) $("inline-body").value = originalDraft.body;
+  }
   const doc = view === "draft" ? model.draft : view === "final" ? model.final : model.original;
   $("document-title").textContent = doc?.title?.trim() || (doc ? "无标题内容" : "待审核内容");
   $("document-title").title = $("document-title").textContent;
   $("paper").innerHTML = doc ? `<div class="kicker">${icon(view === "original" ? "lock" : "doc")}${view === "draft" ? "完整 AI 建议稿 · 独立候选版本" : view === "final" ? "最终采用稿 · 独立确认版本" : "原始内容 · 只读快照"}</div><div class="field">标题</div><h2>${highlight(doc.title,"title")}</h2><div class="field">正文</div><p>${highlight(doc.body,"body")}</p>${view === "draft" ? `<div class="draft-note">建议来源：${escapeHTML(model.draft.source)}。建议稿尚未复检。</div><p class="independent">${escapeHTML(model.draft.reason)}${model.draft.error?"<br>"+escapeHTML(model.draft.error):""}</p>${model.draft.confirmation_items?.length?`<p class="independent">人工确认项（不属于建议正文）：<br>${model.draft.confirmation_items.map(escapeHTML).join("<br>")}</p>`:""}` : ""}${view === "final" ? diffHTML(model.diff) : ""}` : '<div class="kicker">输入标题与正文，开始真实 V2 审核。</div><p class="service-status">尚未评测。请点击右上角「输入内容」。</p>';
   document.querySelectorAll("[data-view]").forEach(b=>{b.classList.toggle("active",b.dataset.view===view);b.setAttribute("aria-selected",b.dataset.view===view);});
   $("paper").setAttribute("aria-labelledby",view+"-tab");
-  $("view-label").textContent = view === "draft" ? "候选稿 · 未复检" : view === "final" ? statusText() : "原文快照 · 只读";
+  $("view-label").textContent = isEditing ? "可编辑 · 提交后生成原文快照" : view === "draft" ? "候选稿 · 未复检" : view === "final" ? statusText() : "原文快照 · 只读";
   $("foot-text").textContent = view === "final" ? "原文、建议稿、最终采用稿分别保留" : "原文保留，建议不会覆盖正文";
   $("doc-count").textContent = activeReview() ? `${risksFor(activeReview()).length} 项风险证据` : "尚未评测";
   document.querySelectorAll(".mark[data-risk]").forEach(b=>b.onclick=()=>selectRisk(Number(b.dataset.risk)));
@@ -122,6 +131,24 @@ function openEdit(mode) {
   $("confirm").textContent=mode==="save_final"?"保存修改 · 待复检":"确认采用并复检";
   $("edit-dialog").showModal();
 }
+function startOriginalEdit() {
+  if (!model || pending) return;
+  originalDraft = {title:model.original?.title || "",body:model.original?.body || ""};
+  draftDirty = false;
+  editingOriginal = true; view = "original";
+  $("inline-error").textContent = "";
+  $("inline-cancel").hidden = !model.original;
+  render();
+  $("inline-title").focus();
+}
+function submitInlineAudit() {
+  if (pending) return;
+  const doc = {title:$("inline-title").value,body:$("inline-body").value};
+  originalDraft = {...doc};
+  if (!doc.body.trim()) {$("inline-error").textContent = "正文不能为空。";return;}
+  $("inline-error").textContent = "";
+  dispatch("audit",{document:doc});
+}
 function openInput() {
   if(!model || pending)return;
   $("input-title").value=model.original?.title||"";$("input-body").value=model.original?.body||"";
@@ -129,7 +156,17 @@ function openInput() {
 }
 document.querySelectorAll(".rail .nav").forEach((nav,i)=>{nav.setAttribute("role","button");nav.setAttribute("tabindex","0");const page=["audit","notes","history","rules"][i];nav.onclick=()=>{if(i===0){switchView("original");return;}dispatch("navigate",{page});};nav.onkeydown=e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();nav.click();}};});
 $("original-tab").onclick=()=>switchView("original");$("draft-tab").onclick=()=>switchView("draft");$("final-tab").onclick=()=>switchView("final");
-$("new-input").onclick=openInput;
+$("new-input").textContent = "新建审核";
+$("new-input").onclick=()=>{
+  if (pending) return;
+  if ((draftDirty || model?.original) && !window.confirm("新建审核将替换当前工作台内容，确定继续吗？")) return;
+  originalDraft = {title:"",body:""};draftDirty = false;editingOriginal = true;view="original";
+  $("inline-error").textContent="";$("inline-cancel").hidden=true;render();$("inline-title").focus();
+};
+$("edit-original").onclick=startOriginalEdit;
+for (const id of ["inline-title","inline-body"]) $(id).addEventListener("input",()=>{originalDraft={title:$("inline-title").value,body:$("inline-body").value};draftDirty=true;$("inline-error").textContent="";});
+$("inline-audit").onclick=submitInlineAudit;
+$("inline-cancel").onclick=()=>{editingOriginal=false;draftDirty=false;view="original";render();};
 $("input-cancel").onclick=()=>$("input-dialog").close();
 $("audit").onclick=()=>{const doc={title:$("input-title").value,body:$("input-body").value};if(!doc.body.trim()){$("input-error").textContent="正文不能为空。";return;}dispatch("audit",{document:doc});};
 $("accept").onclick=()=>dispatch("accept");$("reject").onclick=()=>dispatch("reject");$("edit").onclick=()=>openEdit("edit_accept");
@@ -149,8 +186,13 @@ window.addEventListener("message", event=>{
   }
   if(model && args.model.version<model.version && args.resume_token===resumeToken)return;
   if(pending && args.ack!==pending.id)return;
-  if(pending && args.ack===pending.id){const action=pending.action;clearTimeout(responseTimer);pending=null;lockButtons(false);if(!args.model.error){$("input-dialog").close();$("edit-dialog").close();if(["accept","edit_accept","save_final","recheck"].includes(action))view="final";if(action==="audit")view="original";}}
+  if(pending && args.ack===pending.id){const action=pending.action;clearTimeout(responseTimer);pending=null;lockButtons(false);if(!args.model.error){$("input-dialog").close();$("edit-dialog").close();if(["accept","edit_accept","save_final","recheck"].includes(action))view="final";if(action==="audit"){view="original";editingOriginal=false;draftDirty=false;}}}
+  const firstModel = !model;
   model=args.model;resumeToken=args.resume_token;
+  if (firstModel) {
+    editingOriginal = !model.original;
+    originalDraft = {title:model.original?.title || "",body:model.original?.body || ""};
+  }
   try{localStorage.setItem(storageKey,resumeToken);}catch{}
   render();if(args.resume_message && !model.original)$("decision-state").textContent=args.resume_message;
 });
