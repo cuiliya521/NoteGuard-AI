@@ -18,3 +18,44 @@
 /* Real document titles must not displace the adjacent scope label. */
 .heading h1{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .heading span{flex-shrink:0;margin-left:12px}
+
+
+/* Mobile-only restoration: keep all four real module routes reachable. */
+@media (max-width: 850px) {
+  html,body{height:auto;overflow-x:hidden}
+  .shell{display:block;height:auto!important;min-height:0}
+  .rail{display:grid!important;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;padding:14px 10px 12px;min-height:0;position:relative}
+  .rail .brand{grid-column:1/-1;font-size:20px;margin-bottom:2px;line-height:1.5}
+  .rail .brand svg{height:26px;width:26px}
+  .rail .brand-sub,.rail .nav-label,.rail .rail-foot{display:none}
+  .rail .nav{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;margin:0;padding:10px 2px;min-height:68px;border-radius:8px;font-size:11px;line-height:1.4;text-align:center;white-space:nowrap;cursor:pointer;touch-action:manipulation}
+  .rail .nav i,.rail .nav svg{width:19px;height:19px;flex:none}
+  .rail .nav:focus-visible{outline:3px solid #b8d8bd;outline-offset:2px}
+  .main{min-width:0;overflow:visible}
+  .top{min-height:58px;height:auto;padding:9px 14px;gap:7px;flex-wrap:wrap}
+  .top>span:nth-of-type(2),.top>strong{display:none}
+  .top .right{margin-left:auto;gap:8px}
+  .top #new-input{min-height:42px;padding:8px 12px;touch-action:manipulation}
+  .work{display:flex;flex-direction:column;gap:17px;padding:16px 12px 28px;min-height:0}
+  .center{min-height:0;display:flex;flex-direction:column}
+  .heading{height:auto;min-height:36px;margin-bottom:11px}
+  .heading h1{font-size:19px;white-space:normal;overflow-wrap:anywhere;line-height:1.35}
+  .document{min-height:265px;flex:none}
+  .tabs{height:53px;gap:14px;padding:0 14px;overflow-x:auto;scrollbar-width:thin}
+  .tabs button{font-size:12px;white-space:nowrap;flex-shrink:0}
+  .doc-scroll,.panel-scroll{overflow:visible;flex:none;min-height:0}
+  .paper{padding:23px 18px 30px;margin:0}
+  .paper h2{font-size:21px;line-height:1.55;overflow-wrap:anywhere}
+  .paper p{font-size:16px;line-height:1.85;overflow-wrap:anywhere}
+  .field{margin:20px 0 10px}
+  .doc-foot{height:auto;min-height:44px;gap:9px;padding:10px 13px;flex-wrap:wrap}
+  .panel{min-height:0;overflow:visible}
+  .panel-head{padding:18px 16px 12px}
+  .panel-scroll{padding:12px 16px}
+  .risk-nav{max-height:260px;overflow-y:auto}
+  .decisions{max-height:none;min-height:0;overflow:visible;padding:15px 16px 19px}
+  .two{grid-template-columns:1fr 1fr}
+  .btn{min-height:44px}
+  dialog{width:calc(100vw - 24px);max-width:calc(100vw - 24px);padding:20px 16px;box-sizing:border-box}
+  dialog textarea{max-height:35dvh}
+}
